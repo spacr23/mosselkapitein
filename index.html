@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#04111d" />
+<title>🦪 Mosselkapitein — De Grote Oceaan</title>
+<style>
+  :root{
+    --gold:#ffd34d; --gold2:#ffb020; --deep:#0a2740; --panel:rgba(8,28,46,.82);
+    --panel2:rgba(10,38,60,.92); --line:rgba(120,200,255,.25); --good:#5bd97a; --bad:#ff6b6b;
+    --ink:#eaf6ff; --muted:#9fc4dd; --accent:#43c6ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#04111d;font-family:'Trebuchet MS',Verdana,system-ui,sans-serif;color:var(--ink);user-select:none}
+  #game{position:fixed;inset:0}
+  canvas{display:block}
+
+  /* ---------- HUD ---------- */
+  .hud{position:fixed;pointer-events:none;z-index:10}
+  #topbar{top:0;left:0;right:0;display:flex;gap:10px;padding:10px 14px;align-items:center;flex-wrap:wrap}
+  .stat{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:7px 12px;backdrop-filter:blur(6px);display:flex;align-items:center;gap:8px;font-size:14px;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+  .stat b{font-size:16px}
+  .stat .ico{font-size:18px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+  .coin{color:var(--gold)}
+  .spacer{flex:1}
+
+  .bar{width:90px;height:9px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;position:relative}
+  .bar > i{display:block;height:100%;width:50%;border-radius:6px;transition:width .25s}
+  .xpfill{background:linear-gradient(90deg,#43c6ff,#8a7dff)}
+  .holdfill{background:linear-gradient(90deg,#ffd34d,#ff8a3d)}
+
+  /* clock / weather pill */
+  #envpill{flex-direction:column;align-items:flex-start;gap:2px;min-width:140px}
+  #envpill .row{display:flex;gap:8px;align-items:center}
+  #weatherName{font-size:12px;color:var(--muted)}
+
+  /* ---------- Compass ---------- */
+  #compass{top:64px;left:50%;transform:translateX(-50%);width:260px;height:30px;overflow:hidden;
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 18%,#000 82%,transparent);
+    mask-image:linear-gradient(90deg,transparent,#000 18%,#000 82%,transparent)}
+  #compassStrip{position:absolute;top:0;left:0;height:30px;display:flex;align-items:center;font-weight:bold;color:var(--ink);text-shadow:0 1px 3px #000}
+  #compass .tick{width:30px;text-align:center;font-size:12px;color:var(--muted)}
+  #compass .card{width:30px;text-align:center;font-size:14px;color:var(--gold)}
+  #compassNeedle{position:absolute;top:0;left:50%;width:2px;height:30px;background:var(--gold);transform:translateX(-50%);box-shadow:0 0 8px var(--gold)}
+
+  /* ---------- Sonar / minimap ---------- */
+  #sonarWrap{bottom:16px;right:16px;width:176px;height:176px;pointer-events:auto}
+  #sonar{width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at center,#04243a,#021320 75%);
+    border:2px solid rgba(90,180,255,.4);box-shadow:0 8px 26px rgba(0,0,0,.5),inset 0 0 30px rgba(0,120,200,.18)}
+  #sonarLabel{position:absolute;top:-6px;left:0;right:0;text-align:center;font-size:11px;color:var(--muted);transform:translateY(-100%)}
+
+  /* ---------- Action prompt ---------- */
+  #prompt{bottom:210px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--gold);
+    border-radius:14px;padding:10px 16px;text-align:center;display:none;max-width:340px;box-shadow:0 6px 24px rgba(0,0,0,.5);pointer-events:auto}
+  #prompt .key{display:inline-block;background:var(--gold);color:#222;border-radius:6px;padding:1px 8px;font-weight:bold;margin:0 2px}
+  #prompt small{color:var(--muted)}
+
+  /* ---------- Toasts ---------- */
+  #toasts{bottom:210px;left:16px;display:flex;flex-direction:column;gap:6px;max-width:320px}
+  .toast{background:var(--panel2);border-left:4px solid var(--accent);border-radius:8px;padding:8px 12px;font-size:13px;
+    animation:slideIn .3s ease, fadeOut .5s ease 3.5s forwards;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+  .toast.good{border-left-color:var(--good)} .toast.bad{border-left-color:var(--bad)} .toast.gold{border-left-color:var(--gold)}
+  @keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:none}}
+  @keyframes fadeOut{to{opacity:0;transform:translateX(-20px)}}
+
+  /* ---------- Hint / controls bottom-left ---------- */
+  #controls{bottom:16px;left:16px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12px;color:var(--muted);max-width:230px;line-height:1.7}
+  #controls b{color:var(--ink)}
+  kbd{background:rgba(255,255,255,.14);border-radius:4px;padding:1px 6px;font-family:inherit;color:var(--ink)}
+
+  /* ---------- Modal panels ---------- */
+  #overlay{position:fixed;inset:0;background:rgba(2,10,18,.72);backdrop-filter:blur(3px);z-index:30;display:none;align-items:center;justify-content:center}
+  .modal{width:min(760px,94vw);max-height:88vh;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+    background:linear-gradient(180deg,var(--panel2),rgba(6,22,38,.96));
+    border:1px solid var(--line);border-radius:18px;padding:22px 24px;box-shadow:0 24px 80px rgba(0,0,0,.6);pointer-events:auto}
+  #overlayClose{display:none;position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:33;
+    width:50px;height:50px;border-radius:50%;border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+    font-size:22px;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.55);cursor:pointer}
+  body.touch #overlayClose{display:flex}
+  body.touch .closeX{display:none}
+  body.touch .modal{width:96vw;max-height:90vh;padding:18px 16px calc(20px + env(safe-area-inset-bottom));border-radius:16px}
+  /* sticky title row on touch so the close target & heading stay put while scrolling */
+  body.touch .modal h2{position:sticky;top:-2px;background:linear-gradient(180deg,rgba(10,38,60,.98),rgba(10,38,60,.92));
+    padding:6px 44px 6px 0;margin:-4px 0 4px;z-index:2}
+  body.touch .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+  body.touch .tab{white-space:nowrap;flex:0 0 auto}
+  body.touch .grid{grid-template-columns:1fr}
+  body.touch .btn{padding:11px 16px}
+  .modal h2{margin:0 0 4px;font-size:24px;display:flex;align-items:center;gap:10px}
+  .modal .sub{color:var(--muted);font-size:13px;margin-bottom:16px}
+  .tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .tab{background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:9px;padding:7px 14px;cursor:pointer;font-size:14px;transition:.15s}
+  .tab.active{background:var(--gold);color:#222;font-weight:bold;border-color:var(--gold)}
+  .tab:hover{background:rgba(255,255,255,.14)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+  .card2{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:13px;padding:13px}
+  .card2 h3{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:7px}
+  .card2 p{margin:0 0 10px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .btn{background:var(--gold);color:#222;border:none;border-radius:9px;padding:8px 14px;font-weight:bold;cursor:pointer;font-size:14px;transition:.15s;font-family:inherit}
+  .btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  .btn:disabled{background:rgba(255,255,255,.12);color:var(--muted);cursor:not-allowed;transform:none}
+  .btn.alt{background:rgba(90,180,255,.22);color:var(--ink);border:1px solid var(--line)}
+  .btn.sell{background:var(--good);color:#04210f}
+  .closeX{position:sticky;float:right;top:0;background:rgba(255,255,255,.1);border:none;color:var(--ink);width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:18px}
+  .price{color:var(--gold);font-weight:bold}
+  .lvltag{font-size:11px;background:rgba(67,198,255,.2);border:1px solid var(--line);border-radius:6px;padding:1px 7px;color:var(--accent)}
+  .invrow{display:flex;justify-content:space-between;padding:7px 4px;border-bottom:1px solid rgba(255,255,255,.07);font-size:14px;align-items:center}
+  .invrow:last-child{border:none}
+
+  /* ---------- Cooking minigame ---------- */
+  #cookGame{display:none}
+  #cookTrack{position:relative;height:46px;background:linear-gradient(90deg,#3a2a14,#5a3d18);border-radius:12px;overflow:hidden;border:1px solid var(--line);margin:14px 0}
+  #cookZone{position:absolute;top:0;height:100%;background:linear-gradient(90deg,rgba(91,217,122,.35),rgba(91,217,122,.6),rgba(91,217,122,.35));border-left:2px solid var(--good);border-right:2px solid var(--good)}
+  #cookPerfect{position:absolute;top:0;height:100%;background:rgba(255,211,77,.55);border-left:2px solid var(--gold);border-right:2px solid var(--gold)}
+  #cookNeedle{position:absolute;top:-3px;width:4px;height:52px;background:#fff;box-shadow:0 0 10px #fff;border-radius:2px}
+  #cookInfo{font-size:13px;color:var(--muted);text-align:center}
+
+  /* ---------- Title / intro ---------- */
+  #title{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 30%,#0b3a5e,#04111d 70%);text-align:center;padding:20px}
+  #title h1{font-size:clamp(34px,7vw,72px);margin:0;letter-spacing:1px;
+    background:linear-gradient(180deg,#fff,#ffd34d);-webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 6px 30px rgba(255,180,40,.3);filter:drop-shadow(0 4px 0 rgba(0,0,0,.25))}
+  #title .tag{color:var(--muted);font-size:clamp(14px,2.4vw,19px);margin:8px 0 26px;max-width:560px}
+  #title .big{font-size:48px;margin-bottom:10px;animation:bob 2.5s ease-in-out infinite}
+  @keyframes bob{50%{transform:translateY(-12px)}}
+  #title .play{font-size:20px;padding:14px 38px;border-radius:14px;box-shadow:0 10px 30px rgba(255,180,40,.4)}
+  #title .help{margin-top:22px;color:var(--muted);font-size:13px;max-width:520px;line-height:1.8}
+  #loadNote{color:var(--accent);font-size:13px;margin-top:18px}
+  .hidden{display:none !important}
+
+  #fade{position:fixed;inset:0;background:#04111d;z-index:60;pointer-events:none;opacity:0;transition:opacity .6s}
+
+  /* quest tracker */
+  #questBox{top:108px;right:16px;width:210px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:12.5px;pointer-events:auto}
+  #questBox h4{margin:0 0 6px;font-size:13px;color:var(--gold);display:flex;align-items:center;gap:6px}
+  #questBox .q{padding:4px 0;border-top:1px solid rgba(255,255,255,.07);color:var(--muted)}
+  #questBox .q b{color:var(--ink);font-weight:600}
+  #questBox .q.done{color:var(--good);text-decoration:line-through;opacity:.7}
+
+  /* ---------- Touch controls ---------- */
+  #touchUI{position:fixed;inset:0;z-index:15;pointer-events:none;display:none}
+  body.touch #touchUI{display:block}
+  body.touch #controls{display:none}
+
+  #joy{position:absolute;left:20px;bottom:24px;width:130px;height:130px;border-radius:50%;
+    background:rgba(8,28,46,.5);border:2px solid var(--line);pointer-events:auto;touch-action:none;
+    box-shadow:0 6px 22px rgba(0,0,0,.4),inset 0 0 24px rgba(0,120,200,.15)}
+  #joyKnob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;
+    background:radial-gradient(circle at 40% 35%,#ffe79a,#ffb020);border:2px solid #fff7;box-shadow:0 4px 14px rgba(0,0,0,.5)}
+  #joy .jhint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;opacity:.5}
+
+  .actbtns{position:absolute;right:16px;bottom:18px;display:flex;flex-direction:row;align-items:flex-end;gap:10px;pointer-events:none}
+  .abtn{pointer-events:auto;touch-action:none;width:66px;height:66px;border-radius:50%;border:2px solid var(--line);
+    background:var(--panel2);color:var(--ink);font-size:12px;font-weight:bold;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:1px;box-shadow:0 5px 18px rgba(0,0,0,.45);font-family:inherit;cursor:pointer;
+    -webkit-user-select:none;user-select:none}
+  .abtn .em{font-size:24px;line-height:1}
+  .abtn:active,.abtn.on{transform:scale(.92);background:var(--gold);color:#222;border-color:var(--gold)}
+  .abtn.big{width:84px;height:84px;font-size:13px}
+  .abtn.big .em{font-size:30px}
+
+  #utilbtns{position:absolute;right:12px;display:flex;gap:7px;pointer-events:none}
+  .ubtn{pointer-events:auto;touch-action:manipulation;width:42px;height:42px;border-radius:11px;border:1px solid var(--line);
+    background:var(--panel);color:var(--ink);font-size:18px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.4);cursor:pointer;-webkit-user-select:none;user-select:none}
+  .ubtn:active{background:var(--gold);color:#222}
+
+  /* touch layout: hide non-essential panels, tuck sonar & utils top-right */
+  body.touch #questBox{display:none}
+  body.touch #sonarWrap{top:108px;right:12px;bottom:auto;width:104px;height:104px}
+  body.touch #sonarLabel{font-size:9px}
+  body.touch #utilbtns{top:58px}
+  body.touch #compass{top:8px}
+  body.touch #prompt{bottom:96px;font-size:13px;padding:8px 12px}
+  body.touch #toasts{bottom:96px;left:12px;max-width:46vw}
+
+  #rotateHint{position:fixed;inset:0;z-index:70;background:#04111d;color:var(--ink);display:none;
+    flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;padding:30px}
+  #rotateHint .r{font-size:54px;animation:bob 2s ease-in-out infinite}
+  body.touch.portrait #rotateHint{display:flex}
+
+  @media (max-width:760px){
+    #controls{display:none} #questBox{display:none}
+    .stat{font-size:12px;padding:5px 9px}
+    #envpill{min-width:110px}
+    #title h1{font-size:46px} #title .help{font-size:12px}
+  }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<!-- ============ HUD ============ -->
+<div id="topbar" class="hud">
+  <div class="stat"><span class="ico">🪙</span><b class="coin" id="hudGold">200</b></div>
+  <div class="stat"><span class="ico">⭐</span><div><div style="font-size:12px;color:var(--muted)">Niveau <b id="hudLevel" style="color:var(--ink)">1</b></div><div class="bar"><i class="xpfill" id="hudXP"></i></div></div></div>
+  <div class="stat"><span class="ico">🦪</span><div><div style="font-size:12px;color:var(--muted)">Ruim <b id="hudHoldTxt" style="color:var(--ink)">0/40</b></div><div class="bar"><i class="holdfill" id="hudHold"></i></div></div></div>
+  <div class="stat" id="envpill">
+    <div class="row"><span class="ico" id="weatherIco">☀️</span><b id="clock">06:00</b><span id="weatherName">Helder</span></div>
+    <div class="row" style="font-size:11px;color:var(--muted)"><span id="windInfo">🧭 Wind: NO 12kn</span></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="stat"><span class="ico">🐟</span><b id="hudFish" style="color:var(--accent)">0</b><span style="font-size:11px;color:var(--muted)">exotisch</span></div>
+  <div class="stat" id="seagullStat" style="display:none"><span class="ico">🐦</span><span id="seagullName" style="font-size:12px">Pip</span></div>
+</div>
+
+<div id="compass" class="hud">
+  <div id="compassStrip"></div>
+  <div id="compassNeedle"></div>
+</div>
+
+<div id="questBox" class="hud">
+  <h4>📜 Logboek</h4>
+  <div id="questList"></div>
+</div>
+
+<div id="sonarWrap" class="hud">
+  <div id="sonarLabel">SONAR · druk <kbd>F</kbd> ping</div>
+  <canvas id="sonar" width="176" height="176"></canvas>
+</div>
+
+<div id="prompt" class="hud"></div>
+<div id="toasts" class="hud"></div>
+
+<div id="controls" class="hud">
+  <b>Besturing</b><br>
+  <kbd>W</kbd><kbd>S</kbd> gas / achteruit · <kbd>A</kbd><kbd>D</kbd> sturen<br>
+  <kbd>F</kbd> sonar-ping · <kbd>E</kbd> actie / aanmeren<br>
+  <kbd>Spatie</kbd> mosselen vangen<br>
+  <kbd>C</kbd> camera · <kbd>M</kbd> kaart · <kbd>U</kbd> upgrades<br>
+  <kbd>G</kbd> meeuw uitsturen · <kbd>P</kbd> pauze
+</div>
+
+<!-- ============ Touch controls ============ -->
+<div id="touchUI">
+  <div id="utilbtns">
+    <div class="ubtn" id="ubMap" title="Kaart">🗺️</div>
+    <div class="ubtn" id="ubUpg" title="Werf">🔧</div>
+    <div class="ubtn" id="ubCam" title="Camera">📷</div>
+    <div class="ubtn" id="ubGull" title="Meeuw">🐦</div>
+    <div class="ubtn" id="ubPause" title="Pauze">⏸️</div>
+  </div>
+  <div id="joy"><div class="jhint">vaar</div><div id="joyKnob"></div></div>
+  <div class="actbtns">
+    <div class="abtn" id="abAct"><span class="em">⚓</span>Actie</div>
+    <div class="abtn" id="abSonar"><span class="em">📡</span>Sonar</div>
+    <div class="abtn big" id="abCatch"><span class="em">🦪</span>Vang</div>
+  </div>
+</div>
+
+<div id="rotateHint">
+  <div class="r">📱↻</div>
+  <h2 style="margin:0">Draai je toestel</h2>
+  <div style="color:var(--muted);max-width:300px">Mosselkapitein speelt het best in <b>liggende stand</b> (landscape). Draai je telefoon een kwartslag.</div>
+</div>
+
+<!-- ============ Modal overlay ============ -->
+<div id="overlay">
+  <button id="overlayClose" aria-label="Sluiten">✕</button>
+  <div class="modal" id="modal"></div>
+</div>
+
+<!-- ============ Title screen ============ -->
+<div id="title">
+  <div class="big">🦪⚓🌊</div>
+  <h1>MOSSELKAPITEIN</h1>
+  <div class="tag">Word de beroemdste mosselkapitein ter wereld. Vaar de open oceaan, spoor mosselbanken op met sonar, kook heerlijke gerechten en bouw je vissersrijk uit — door zon, storm en mist.</div>
+  <button class="btn play" id="playBtn">⚓ Uitvaren!</button>
+  <div class="help">
+    <b>Doel:</b> Vang mosselen op de banken (groene blips op de sonar), kook ze in de kombuis-minigame en verkoop je gerechten in havens. Verdien munten, level je vaardigheden, koop upgrades en betere schepen, en ontdek de geheimen van de zee — verborgen eilanden, gouden mosselen, gestrande zeelieden en flessenpost.
+  </div>
+  <div id="loadNote">⏳ Oceaan laden…</div>
+</div>
+
+<div id="fade"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module" src="./game.js"></script>
+</body>
+</html>
