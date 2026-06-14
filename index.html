@@ -5,7 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Mosselkapitein" />
 <meta name="theme-color" content="#04111d" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="apple-touch-icon" href="./icon-180.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png" />
 <title>🦪 Mosselkapitein — De Grote Oceaan</title>
 <style>
   :root{
@@ -20,7 +26,7 @@
 
   /* ---------- HUD ---------- */
   .hud{position:fixed;pointer-events:none;z-index:10}
-  #topbar{top:0;left:0;right:0;display:flex;gap:10px;padding:10px 14px;align-items:center;flex-wrap:wrap}
+  #topbar{top:0;left:0;right:0;display:flex;gap:10px;padding:calc(10px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left));align-items:center;flex-wrap:wrap}
   .stat{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;
     padding:7px 12px;backdrop-filter:blur(6px);display:flex;align-items:center;gap:8px;font-size:14px;box-shadow:0 4px 18px rgba(0,0,0,.35)}
   .stat b{font-size:16px}
@@ -147,14 +153,14 @@
   body.touch #touchUI{display:block}
   body.touch #controls{display:none}
 
-  #joy{position:absolute;left:20px;bottom:24px;width:130px;height:130px;border-radius:50%;
+  #joy{position:absolute;left:calc(20px + env(safe-area-inset-left));bottom:calc(24px + env(safe-area-inset-bottom));width:130px;height:130px;border-radius:50%;
     background:rgba(8,28,46,.5);border:2px solid var(--line);pointer-events:auto;touch-action:none;
     box-shadow:0 6px 22px rgba(0,0,0,.4),inset 0 0 24px rgba(0,120,200,.15)}
   #joyKnob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;
     background:radial-gradient(circle at 40% 35%,#ffe79a,#ffb020);border:2px solid #fff7;box-shadow:0 4px 14px rgba(0,0,0,.5)}
   #joy .jhint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;opacity:.5}
 
-  .actbtns{position:absolute;right:16px;bottom:18px;display:flex;flex-direction:row;align-items:flex-end;gap:10px;pointer-events:none}
+  .actbtns{position:absolute;right:calc(16px + env(safe-area-inset-right));bottom:calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:row;align-items:flex-end;gap:10px;pointer-events:none}
   .abtn{pointer-events:auto;touch-action:none;width:66px;height:66px;border-radius:50%;border:2px solid var(--line);
     background:var(--panel2);color:var(--ink);font-size:12px;font-weight:bold;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:1px;box-shadow:0 5px 18px rgba(0,0,0,.45);font-family:inherit;cursor:pointer;
@@ -164,7 +170,7 @@
   .abtn.big{width:84px;height:84px;font-size:13px}
   .abtn.big .em{font-size:30px}
 
-  #utilbtns{position:absolute;right:12px;display:flex;gap:7px;pointer-events:none}
+  #utilbtns{position:absolute;right:calc(12px + env(safe-area-inset-right));display:flex;gap:7px;pointer-events:none}
   .ubtn{pointer-events:auto;touch-action:manipulation;width:42px;height:42px;border-radius:11px;border:1px solid var(--line);
     background:var(--panel);color:var(--ink);font-size:18px;display:flex;align-items:center;justify-content:center;
     box-shadow:0 4px 14px rgba(0,0,0,.4);cursor:pointer;-webkit-user-select:none;user-select:none}
@@ -286,5 +292,11 @@
 }}
 </script>
 <script type="module" src="./game.js"></script>
+<script>
+  // Register the service worker for offline play + faster loads (long-term testing on a phone).
+  if('serviceWorker' in navigator){
+    addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+  }
+</script>
 </body>
 </html>

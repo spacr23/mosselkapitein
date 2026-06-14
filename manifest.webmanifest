@@ -1,0 +1,17 @@
+{
+  "name": "Mosselkapitein — De Grote Oceaan",
+  "short_name": "Mosselkapitein",
+  "description": "Word de beroemdste mosselkapitein ter wereld: vaar, vang mosselen met sonar, kook en bouw je vissersrijk uit.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#04111d",
+  "theme_color": "#04111d",
+  "lang": "nl",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

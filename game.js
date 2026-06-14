@@ -1256,6 +1256,20 @@ function stepSim(dt){
   shipState.x=Math.max(-lim,Math.min(lim,shipState.x));
   shipState.z=Math.max(-lim,Math.min(lim,shipState.z));
 
+  // ---- island collision: push the hull back to the beach edge ----
+  for(const isl of islandMeshes){
+    const dx=shipState.x-isl.x, dz=shipState.z-isl.z;
+    const d=Math.hypot(dx,dz);
+    const minD=isl.r+6;                 // beach edge + hull margin
+    if(d<minD && d>0.001){
+      const nx=dx/d, nz=dz/d;
+      shipState.x=isl.x+nx*minD;        // slide out along the radial normal
+      shipState.z=isl.z+nz*minD;
+      shipState.speed*=0.25;            // bump kills most forward momentum
+      shipState.throttle*=0.25;
+    }
+  }
+
   // ---- float ship on waves ----
   const t=oceanUniforms.uTime.value, sc=oceanUniforms.uWaveScale.value;
   const h0=waveHeight(shipState.x,shipState.z,t,sc);
@@ -1580,11 +1594,88 @@ function togglePause(){
 window.__resume=()=>{ W.paused=false; closeModal(); };
 
 // ============================================================================
+//  21b. SAVE / LOAD  (localStorage — survives reloads & app restarts)
+// ============================================================================
+const SAVE_KEY='mosselkapitein_save_v1';
+let loadedFromSave=false;
+
+function saveGame(){
+  if(!W.started) return;
+  try{
+    const data={ v:1,
+      gold:W.gold, level:W.level, xp:W.xp, xpNext:W.xpNext,
+      skills:W.skills, skillXp:W.skillXp,
+      inv:W.inv, dishes:W.dishes,
+      ship:W.ship, holdMax:W.holdMax,
+      engineLvl:W.engineLvl, harvestLvl:W.harvestLvl, sonarLvl:W.sonarLvl,
+      hasWeatherMachine:W.hasWeatherMachine, hasSeagull:W.hasSeagull, hasRestaurant:W.hasRestaurant,
+      seagullName:W.seagullName, aquarium:W.aquarium,
+      time:W.time, day:W.day,
+      questsDone:[...W.questsDone],
+      rescued:W.rescued, treasures:W.treasures, bottles:W.bottles,
+      totalCaught:W.totalCaught, totalCooked:W.totalCooked, totalEarned:W.totalEarned, totalGold:W.totalGold,
+      islandsVisited: islandMeshes.map(i=>!!i.visited),
+      ship_x:shipState.x, ship_z:shipState.z, ship_h:shipState.heading,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  }catch(e){ /* private mode / quota — ignore */ }
+}
+
+function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
+
+function loadGame(){
+  let d; try{ d=JSON.parse(localStorage.getItem(SAVE_KEY)); }catch(e){ return false; }
+  if(!d || d.v!==1) return false;
+  // scalars & objects
+  const keys=['gold','level','xp','xpNext','skills','skillXp','inv','dishes','ship','holdMax',
+    'engineLvl','harvestLvl','sonarLvl','hasWeatherMachine','hasSeagull','hasRestaurant',
+    'seagullName','aquarium','time','day','rescued','treasures','bottles',
+    'totalCaught','totalCooked','totalEarned','totalGold'];
+  for(const k of keys){ if(d[k]!==undefined) W[k]=d[k]; }
+  W.questsDone = new Set(d.questsDone||[]);
+  // rebuild the ship mesh for the saved hull
+  buildShip();
+  seagull.visible = !!W.hasSeagull;
+  // restore island treasure state (visited chests are emptied)
+  if(Array.isArray(d.islandsVisited)){
+    islandMeshes.forEach((isl,idx)=>{
+      isl.visited = !!d.islandsVisited[idx];
+      if(isl.visited){
+        if(isl.group.userData.gold) isl.group.userData.gold.visible=false;
+        if(isl.group.userData.chest) isl.group.userData.chest.material.color.set(0x5a3a1a);
+      }
+    });
+  }
+  // restore position
+  if(typeof d.ship_x==='number'){ shipState.x=d.ship_x; shipState.z=d.ship_z; shipState.heading=d.ship_h||0; }
+  return true;
+}
+
+function newGame(){
+  try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+  location.reload();
+}
+window.__newGame=()=>{ if(confirm('Nieuw spel starten? Je huidige voortgang gaat verloren.')) newGame(); };
+
+// Autosave: every few seconds while playing, and whenever the app is hidden/closed
+setInterval(()=>{ if(W.started && !W.paused) saveGame(); }, 5000);
+addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') saveGame(); });
+addEventListener('pagehide', saveGame);
+addEventListener('beforeunload', saveGame);
+
+// ============================================================================
 //  22. START
 // ============================================================================
 function startGame(){
   W.started=true;
   document.getElementById('title').classList.add('hidden');
+  if(loadedFromSave){
+    setWeather(W.weather||'clear');
+    updateHUD(); renderQuests(); checkQuests();
+    if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+    toast(`⚓ Welkom terug, Kapitein! Dag ${W.day} · ${Math.floor(W.gold)} 🪙`,'gold');
+    return;
+  }
   setWeather('clear');
   updateHUD(); renderQuests(); checkQuests();
   if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
@@ -1610,6 +1701,19 @@ window.keys=keys; window.stepSim=stepSim; window.startHarvest=startHarvest; wind
 window.openHarbor=openHarbor; window.harborMarkers=harborMarkers; window.startCook=startCook; window.RECIPES=RECIPES;
 window.cookGame=cookGame; window.cookHit=cookHit;
 
+// Restore a previous save (if any) and adjust the title screen accordingly
+if(hasSave()){
+  loadedFromSave = loadGame();
+}
+if(loadedFromSave){
+  $('playBtn').textContent='⚓ Verder spelen';
+  const help=document.querySelector('#title .help');
+  if(help) help.insertAdjacentHTML('afterend',
+    `<button id="newGameBtn" style="margin-top:14px;background:none;border:none;color:var(--muted);
+      text-decoration:underline;font-size:13px;cursor:pointer;font-family:inherit">🆕 Nieuw spel beginnen</button>`);
+  const nb=$('newGameBtn'); if(nb) nb.addEventListener('click',window.__newGame);
+}
+
 // Kick off loop
-$('loadNote').textContent='✅ Klaar! Klik Uitvaren.';
+$('loadNote').textContent= loadedFromSave ? '✅ Opgeslagen reis gevonden — klik Verder spelen.' : '✅ Klaar! Klik Uitvaren.';
 requestAnimationFrame(update);

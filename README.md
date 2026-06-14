@@ -49,6 +49,20 @@ besturing op het scherm:
 > Touch-besturing testen op een computer? Voeg `?touch=1` toe aan de URL,
 > bijv. `http://localhost:8765/index.html?touch=1`.
 
+## 💾 Opslaan & als app installeren
+
+- **Automatisch opslaan:** je voortgang (munten, niveau, ruim, upgrades, schip,
+  schepen, eilanden en je positie) wordt elke paar seconden en bij het sluiten
+  bewaard in de browser (`localStorage`). Bij terugkomst staat er **⚓ Verder spelen**;
+  met **🆕 Nieuw spel beginnen** wis je de save en start je opnieuw.
+- **Op je iPhone als app:** open de site in **Safari** → deelknop → **"Zet op
+  beginscherm"**. Dankzij de web-manifest en het app-icoon start de game dan
+  schermvullend, met eigen icoon, in liggende stand.
+- **Offline spelen:** na de eerste keer laden cachet een service worker de game
+  én de Three.js-bibliotheek, dus hij werkt daarna ook zonder internet en laadt
+  sneller. Push je een update? Verhoog `CACHE` in `sw.js` zodat telefoons de
+  nieuwe versie ophalen.
+
 ## 🧭 Gameloop
 
 1. **Zoek** mosselbanken met de **sonar** (`F`) — groene blips op de radar.
