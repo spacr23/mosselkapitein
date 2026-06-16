@@ -617,6 +617,31 @@ addEventListener('resize',()=>{
 let camMode=0; // 0 chase, 1 close, 2 high
 function cycleCamera(){ camMode=(camMode+1)%3; toast('📷 Camera: '+['Volgcamera','Dichtbij','Vogelvlucht'][camMode]); }
 
+// ---- free-look: drag a finger (or mouse) over the water to orbit the camera ----
+const camLook = { yaw:0, pitch:0, active:false };
+const clampN = (v,a,b)=>Math.max(a,Math.min(b,v));
+function setupLook(){
+  const surf = document.getElementById('game');
+  if(!surf) return;
+  let id=null, lx=0, ly=0;
+  const onUI = t => t && t.closest && t.closest('#joy,.abtn,.ubtn,#utilbtns,#prompt,.stat,#sonarWrap,#questBox,#overlay,#title,#controls');
+  surf.addEventListener('pointerdown', e=>{
+    if(id!==null || onUI(e.target) || W.paused || !W.started) return;
+    id=e.pointerId; lx=e.clientX; ly=e.clientY; camLook.active=true;
+    try{ surf.setPointerCapture(e.pointerId); }catch(_){}
+  });
+  surf.addEventListener('pointermove', e=>{
+    if(e.pointerId!==id) return;
+    const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
+    camLook.yaw   = clampN(camLook.yaw   - dx*0.006, -2.7, 2.7);
+    camLook.pitch = clampN(camLook.pitch - dy*0.004, -0.30, 1.15);
+  });
+  const end=e=>{ if(e.pointerId===id){ id=null; camLook.active=false; } };
+  surf.addEventListener('pointerup', end);
+  surf.addEventListener('pointercancel', end);
+  surf.addEventListener('pointerleave', end);
+}
+
 // ---------- TOUCH CONTROLS ----------
 const touchCtrl = { active:false, throttle:0, turn:0 };
 function setupTouch(){
@@ -1636,10 +1661,17 @@ function updateCamera(dt){
   let back=42, up=20, lookUp=4;
   if(camMode===1){ back=24; up=11; lookUp=3; }
   if(camMode===2){ back=20; up=60; lookUp=0; }
-  const tx=shipState.x - Math.sin(shipState.heading)*back;
-  const tz=shipState.z - Math.cos(shipState.heading)*back;
-  const ty=ship.position.y+up;
-  camPos.lerp(new THREE.Vector3(tx,ty,tz), Math.min(1,dt*2.2));
+  // when not actively looking, drift the orbit back behind the ship
+  if(!camLook.active){
+    camLook.yaw   += (0-camLook.yaw)  *Math.min(1,dt*1.6);
+    camLook.pitch += (0-camLook.pitch)*Math.min(1,dt*1.6);
+  }
+  const ang=shipState.heading + camLook.yaw;
+  const horiz=Math.cos(camLook.pitch);
+  const tx=shipState.x - Math.sin(ang)*back*horiz;
+  const tz=shipState.z - Math.cos(ang)*back*horiz;
+  const ty=ship.position.y + up + Math.sin(camLook.pitch)*back;
+  camPos.lerp(new THREE.Vector3(tx,ty,tz), Math.min(1,dt*(camLook.active?6:2.2)));
   camera.position.copy(camPos);
   camera.lookAt(shipState.x, ship.position.y+lookUp, shipState.z);
 }
@@ -1919,6 +1951,8 @@ function startGame(){
   if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
   toast(IS_TOUCH ? '⚓ Welkom, Kapitein! Tik 📡 Sonar en zoek de groene mosselbanken.'
                  : '⚓ Welkom, Kapitein! Druk F voor sonar en zoek de groene mosselbanken.','gold');
+  setTimeout(()=>toast(IS_TOUCH ? '👆 Sleep met een tweede vinger over het water om rond te kijken.'
+                                : '🖱️ Sleep met de muis over het water om rond te kijken.'), 4200);
 }
 $('playBtn').addEventListener('click',startGame);
 
@@ -1932,12 +1966,14 @@ if(IS_TOUCH){
   setupTouch();
   $('sonarLabel').innerHTML='📡 SONAR';
 }
+setupLook(); // drag the water (touch or mouse) to look around
 
 // expose for debugging / test harness
 window.W=W; window.shipState=shipState; window.beds=beds; window.setWeatherDbg=setWeather;
 window.keys=keys; window.stepSim=stepSim; window.startHarvest=startHarvest; window.doHarvest=doHarvest;
 window.openHarbor=openHarbor; window.harborMarkers=harborMarkers; window.startCook=startCook; window.RECIPES=RECIPES;
 window.cookGame=cookGame; window.cookHit=cookHit;
+window.camera=camera; window.camLook=camLook;
 
 // Restore a previous save (if any) and adjust the title screen accordingly
 if(hasSave()){
