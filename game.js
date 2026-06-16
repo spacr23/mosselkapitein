@@ -1144,10 +1144,125 @@ function startCook(r, contest){
   cookGame.perfL = cookGame.zoneL + cookGame.zoneW/2 - cookGame.perfW/2;
   renderCook();
 }
+// ---- animated galley scene: the captain stirring a pan of mussels ----
+function cookSceneSVG(){
+  return `<svg id="cookScene" viewBox="0 0 520 300" width="100%" style="display:block;border-radius:14px;border:1px solid var(--line);margin:6px 0 12px;background:linear-gradient(180deg,#2a1d12,#19120b);max-height:46vh" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="ckSeaG" cx="50%" cy="40%" r="70%"><stop offset="0%" stop-color="#4a6173"/><stop offset="100%" stop-color="#1d2a33"/></radialGradient>
+      <clipPath id="ckPort"><circle cx="108" cy="120" r="66"/></clipPath>
+      <linearGradient id="ckWall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a2817"/><stop offset="1" stop-color="#241910"/></linearGradient>
+      <style>
+        @keyframes ckRise{0%{opacity:0;transform:translateY(0) scale(.6)}25%{opacity:.65}100%{opacity:0;transform:translateY(-78px) scale(1.5)}}
+        .ckSteam{transform-box:fill-box;transform-origin:center;animation:ckRise 2.8s ease-in infinite}
+        @keyframes ckFlame{0%,100%{transform:scaleY(1) scaleX(1)}50%{transform:scaleY(.68) scaleX(1.12)}}
+        .ckFlame{transform-box:fill-box;transform-origin:bottom center;animation:ckFlame .42s ease-in-out infinite}
+        @keyframes ckSea{0%{transform:translateX(0)}100%{transform:translateX(-44px)}}
+        .ckSea{animation:ckSea 3.4s linear infinite}
+        @keyframes ckRain{0%{transform:translateY(-8px);opacity:0}30%{opacity:.5}100%{transform:translateY(46px);opacity:0}}
+        .ckRain{animation:ckRain 1s linear infinite}
+        @keyframes ckBob{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-3px) rotate(-1deg)}}
+        .ckBob{transform-box:fill-box;transform-origin:50% 100%;animation:ckBob 3.4s ease-in-out infinite}
+      </style>
+    </defs>
+
+    <!-- galley wall + planks -->
+    <rect width="520" height="300" fill="url(#ckWall)"/>
+    <g stroke="#1c130b" stroke-width="2" opacity=".5">
+      <line x1="0" y1="60" x2="520" y2="60"/><line x1="0" y1="150" x2="520" y2="150"/><line x1="0" y1="240" x2="520" y2="240"/>
+    </g>
+
+    <!-- porthole with stormy sea -->
+    <g clip-path="url(#ckPort)">
+      <rect x="42" y="54" width="132" height="132" fill="url(#ckSeaG)"/>
+      <g class="ckSea">
+        <path d="M30 130 q22 -18 44 0 t44 0 t44 0 t44 0 t44 0 v70 h-264 z" fill="#5a7384" opacity=".85"/>
+        <path d="M30 146 q22 -14 44 0 t44 0 t44 0 t44 0 t44 0 v60 h-264 z" fill="#3c5260"/>
+      </g>
+      <g stroke="#cfe0ea" stroke-width="1.4" opacity=".55">
+        <line class="ckRain" x1="70" y1="60" x2="64" y2="76"/><line class="ckRain" x1="100" y1="60" x2="94" y2="76" style="animation-delay:.3s"/>
+        <line class="ckRain" x1="130" y1="60" x2="124" y2="76" style="animation-delay:.6s"/><line class="ckRain" x1="86" y1="60" x2="80" y2="76" style="animation-delay:.15s"/>
+        <line class="ckRain" x1="116" y1="60" x2="110" y2="76" style="animation-delay:.45s"/>
+      </g>
+    </g>
+    <circle cx="108" cy="120" r="66" fill="none" stroke="#7d6033" stroke-width="9"/>
+    <circle cx="108" cy="120" r="66" fill="none" stroke="#a98545" stroke-width="3"/>
+    ${[0,1,2,3,4,5,6,7].map(i=>{const a=i/8*6.283; return `<circle cx="${(108+Math.cos(a)*66).toFixed(0)}" cy="${(120+Math.sin(a)*66).toFixed(0)}" r="2.4" fill="#5a4424"/>`;}).join('')}
+
+    <!-- hanging pans -->
+    <g stroke="#2a2a2e" stroke-width="2" fill="#3b3b40">
+      <line x1="250" y1="20" x2="250" y2="44"/><circle cx="250" cy="52" r="12"/>
+      <line x1="290" y1="20" x2="290" y2="50"/><ellipse cx="290" cy="58" rx="14" ry="9"/>
+    </g>
+
+    <!-- stove top -->
+    <rect x="150" y="232" width="220" height="60" rx="8" fill="#9aa0a6"/>
+    <rect x="150" y="232" width="220" height="10" rx="5" fill="#c4c9ce"/>
+    <ellipse cx="250" cy="244" rx="62" ry="12" fill="#3b3f44"/>
+    <!-- gas flame -->
+    <g class="ckFlame"><path d="M236 252 q6 -18 14 -22 q-2 12 6 16 q10 -6 8 -18 q12 12 4 28 q-16 10 -32 0 z" fill="#3aa0ff" opacity=".9"/>
+      <path d="M244 250 q4 -10 6 -14 q4 8 8 12 q-4 8 -14 6 z" fill="#ffd34d" opacity=".9"/></g>
+
+    <!-- cast-iron pan + mussels -->
+    <ellipse cx="250" cy="214" rx="66" ry="22" fill="#23262b"/>
+    <ellipse cx="250" cy="210" rx="60" ry="18" fill="#3a2f25"/>
+    <ellipse cx="250" cy="209" rx="56" ry="15" fill="#caa86a" opacity=".9"/>
+    ${[[226,206],[248,212],[270,205],[238,213],[262,213],[252,202]].map((m,i)=>`
+      <g transform="translate(${m[0]} ${m[1]}) rotate(${i*40-30})"><ellipse rx="9" ry="5.5" fill="#23304a"/><ellipse rx="5" ry="3" fill="#e8a23a" cx="1"/></g>`).join('')}
+    <path d="M220 205 q8 -4 16 -1 q-6 4 -16 1z" fill="#3aa34a"/><path d="M268 204 q8 -3 15 1 q-7 3 -15 -1z" fill="#3aa34a"/>
+
+    <!-- rising steam -->
+    <g fill="#ffffff" opacity=".0">
+      <ellipse class="ckSteam" cx="236" cy="190" rx="9" ry="13" style="animation-delay:0s"/>
+      <ellipse class="ckSteam" cx="252" cy="186" rx="11" ry="15" style="animation-delay:.7s"/>
+      <ellipse class="ckSteam" cx="268" cy="190" rx="8" ry="12" style="animation-delay:1.4s"/>
+    </g>
+
+    <!-- the captain (bobs with the boat) -->
+    <g class="ckBob">
+      <!-- jacket / body -->
+      <path d="M352 300 v-96 q0 -40 46 -40 q46 0 46 40 v96 z" fill="#6b5535"/>
+      <path d="M398 300 v-130" stroke="#4f3f27" stroke-width="3"/>
+      <path d="M380 176 l18 26 l18 -26 q-18 -12 -36 0z" fill="#23304a"/> <!-- sweater V -->
+      <path d="M372 172 q26 -16 52 0 l-6 16 q-20 -12 -40 0z" fill="#7a6240"/> <!-- collar -->
+      <!-- head -->
+      <ellipse cx="404" cy="120" rx="26" ry="28" fill="#e0b187"/>
+      <path d="M384 120 q-6 0 -5 10 q1 8 7 8z" fill="#e0b187"/> <!-- nose toward pan -->
+      <path d="M380 128 q-2 22 26 26 q22 -2 22 -20 q-10 8 -26 6 q-16 -2 -22 -12z" fill="#cfd2cf"/> <!-- beard -->
+      <circle cx="392" cy="116" r="2.6" fill="#3a2c1c"/> <!-- eye -->
+      <path d="M384 108 q6 -4 12 -2" stroke="#7a5a3a" stroke-width="2" fill="none"/> <!-- brow -->
+      <!-- captain cap -->
+      <path d="M374 104 q30 -22 60 0 q2 6 -4 8 q-26 -10 -52 0 q-6 -2 -4 -8z" fill="#1c2740"/>
+      <path d="M372 110 q32 -8 64 0 l-2 8 q-30 -8 -60 0z" fill="#141d30"/>
+      <path d="M372 116 q-6 2 -8 8 q14 4 22 -2z" fill="#0e1626"/> <!-- brim -->
+      <circle cx="404" cy="98" r="7" fill="#10182a"/>
+      <path d="M404 94 v9 M400 99 h8 M401 103 a3 3 0 0 0 6 0" stroke="var(--gold)" stroke-width="1.6" fill="none"/> <!-- gold anchor -->
+
+      <!-- far arm holding the pan handle -->
+      <path d="M352 210 q-26 -2 -40 6" stroke="#6b5535" stroke-width="15" stroke-linecap="round" fill="none"/>
+      <ellipse cx="312" cy="216" rx="8" ry="6" fill="#e0b187"/>
+      <rect x="300" y="208" width="20" height="6" rx="3" fill="#1a1a1d"/> <!-- pan handle -->
+
+      <!-- NEAR (stirring) arm: upper arm fixed, forearm+spoon animated -->
+      <path d="M372 190 q-12 4 -22 14" stroke="#6b5535" stroke-width="16" stroke-linecap="round" fill="none"/>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="6 350 204;-8 350 204;6 350 204" dur="1.5s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"/>
+        <path d="M350 204 q-22 0 -40 6" stroke="#6b5535" stroke-width="13" stroke-linecap="round" fill="none"/>
+        <ellipse cx="310" cy="210" rx="9" ry="7" fill="#e0b187"/>
+        <g>
+          <animateTransform attributeName="transform" type="rotate" values="-6 308 210;10 308 210;-6 308 210" dur="1.5s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" keyTimes="0;0.5;1"/>
+          <rect x="252" y="206" width="62" height="6" rx="3" fill="#b9824a" transform="rotate(8 308 210)"/>
+          <ellipse cx="252" cy="210" rx="11" ry="7" fill="#9a6a37"/>
+        </g>
+      </g>
+    </g>
+  </svg>`;
+}
+
 function renderCook(){
   const r=cookGame.recipe;
   openModal(`
     <h2>👨‍🍳 ${cookGame.contest?'Kookwedstrijd':'Koken'}: ${r.icon} ${r.name}</h2>
+    ${cookSceneSVG()}
     <div class="sub">${IS_TOUCH?'Tik op <b>👆 TIK!</b>':'Druk <b>Spatie</b>'} als de naald in de <span style="color:var(--good)">groene zone</span> staat — raak de <span style="color:var(--gold)">gouden kern</span> voor 'perfect'. ${cookGame.need} keer raak = klaar.</div>
     <div id="cookTrack">
       <div id="cookZone" style="left:${cookGame.zoneL*100}%;width:${cookGame.zoneW*100}%"></div>
