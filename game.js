@@ -32,10 +32,13 @@ const W = {
 };
 
 const SHIPS = [
-  { name: 'Kleine Vissersboot', icon:'🛶', hold:40,  speed:1.0,  price:0,     scale:1.0, hull:0x3a8fd0 },
-  { name: 'Mosselschip',        icon:'⛵', hold:90,  speed:1.25, price:2500,  scale:1.35, hull:0x2d7a4f },
-  { name: 'Luxe Handelsschip',  icon:'🚢', hold:180, speed:1.5,  price:9000,  scale:1.7,  hull:0xb33a3a },
-  { name: 'Experimenteel Schip',icon:'🛸', hold:300, speed:2.0,  price:28000, scale:1.9,  hull:0x6a3ad0 },
+  { name: 'Kleine Vissersboot',  icon:'🛶', hold:40,  speed:1.0,  price:0,     scale:1.0,  hull:0x3a8fd0, style:'fisher',  sail:0x9fc4dd },
+  { name: 'Mosselschip',         icon:'⛵', hold:100, speed:1.35, price:2200,  scale:1.35, hull:0x2d7a4f, style:'cutter',  sail:0xeef3e0 },
+  { name: 'Snelle Sloep',        icon:'🚤', hold:70,  speed:2.0,  price:5200,  scale:1.15, hull:0xff5a4d, style:'speeder', sail:0xffe1a8 },
+  { name: 'Luxe Handelsschip',   icon:'🚢', hold:220, speed:1.6,  price:12000, scale:1.7,  hull:0xb33a3a, style:'trader',  sail:0xf3e2c0 },
+  { name: 'Oceaan Trawler',      icon:'🛳️', hold:360, speed:1.85, price:26000, scale:2.0,  hull:0x37506b, style:'trawler', sail:0xcdd6e0 },
+  { name: 'Catamaran Racer',     icon:'⛵', hold:150, speed:2.7,  price:42000, scale:1.55, hull:0x18c0b0, style:'cata',    sail:0xffffff },
+  { name: 'Experimenteel Schip', icon:'🛸', hold:600, speed:3.4,  price:90000, scale:2.0,  hull:0x6a3ad0, style:'exp',     sail:0x6fffff },
 ];
 
 const WEATHERS = {
@@ -77,9 +80,9 @@ renderer.toneMappingExposure = 1.05;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x9fc4dd, 0.00018);
+scene.fog = new THREE.FogExp2(0x9fc4dd, 0.00013);
 
-const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.5, 6000);
+const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.5, 9000);
 camera.position.set(0, 22, 38);
 
 // lighting
@@ -132,10 +135,10 @@ scene.add(sky);
 // clouds (billboards)
 const cloudGroup = new THREE.Group(); scene.add(cloudGroup);
 const cloudTex = makeCloudTexture();
-for(let i=0;i<26;i++){
+for(let i=0;i<40;i++){
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1,1),
     new THREE.MeshBasicMaterial({map:cloudTex, transparent:true, depthWrite:false, opacity:0.85}));
-  const a=Math.random()*Math.PI*2, r=400+Math.random()*1400;
+  const a=Math.random()*Math.PI*2, r=400+Math.random()*2600;
   m.position.set(Math.cos(a)*r, 180+Math.random()*220, Math.sin(a)*r);
   const s=160+Math.random()*260; m.scale.set(s,s*0.55,1);
   m.userData.spd = 2+Math.random()*5;
@@ -145,32 +148,34 @@ for(let i=0;i<26;i++){
 // ============================================================================
 //  3. OCEAN (animated Gerstner-ish waves via shader)
 // ============================================================================
-const OCEAN_SIZE = 4000;
-const OCEAN_SEG = IS_MOBILE ? 180 : 320;
+const OCEAN_SIZE = 6400;
+const OCEAN_SEG = IS_MOBILE ? 200 : 360;
 const oceanGeo = new THREE.PlaneGeometry(OCEAN_SIZE, OCEAN_SIZE, OCEAN_SEG, OCEAN_SEG);
 oceanGeo.rotateX(-Math.PI/2);
 const oceanUniforms = {
   uTime:{value:0}, uWaveScale:{value:1.0},
   uSunDir:{value:new THREE.Vector3(0,1,0)}, uSunColor:{value:new THREE.Color(0xfff0c8)},
-  uDeep:{value:new THREE.Color(0x0c4f8a)}, uShallow:{value:new THREE.Color(0x35d2cf)},
-  uSky:{value:new THREE.Color(0xbfe3ff)}, uNight:{value:0}, uSunStrength:{value:1.0},
+  uDeep:{value:new THREE.Color(0x063a6e)}, uShallow:{value:new THREE.Color(0x37e0d6)},
+  uSky:{value:new THREE.Color(0xcdeBff)}, uNight:{value:0}, uSunStrength:{value:1.0},
 };
 const oceanMat = new THREE.ShaderMaterial({
   uniforms: oceanUniforms,
   vertexShader:`
-    uniform float uTime,uWaveScale; varying vec3 vN; varying vec3 vWorld; varying float vH;
-    // 4 directional waves (match JS WAVES)
-    vec2 D[4]; float A[4]; float L[4]; float S[4];
+    uniform float uTime,uWaveScale; varying vec3 vN; varying vec3 vWorld; varying float vH; varying float vD;
+    // 4 big directional waves (match JS WAVES) + 2 fine detail waves for sparkle (visual only)
+    vec2 D[6]; float A[6]; float L[6]; float S[6];
     void initw(){
       D[0]=normalize(vec2(0.8,0.6));  A[0]=0.55; L[0]=34.0; S[0]=0.9;
       D[1]=normalize(vec2(-0.6,0.8)); A[1]=0.35; L[1]=21.0; S[1]=1.2;
       D[2]=normalize(vec2(0.3,-0.9)); A[2]=0.22; L[2]=13.0; S[2]=1.6;
       D[3]=normalize(vec2(0.9,0.2));  A[3]=0.12; L[3]=7.5;  S[3]=2.4;
+      D[4]=normalize(vec2(-0.5,-0.7));A[4]=0.06; L[4]=4.4;  S[4]=3.1;
+      D[5]=normalize(vec2(0.65,-0.4));A[5]=0.04; L[5]=2.7;  S[5]=3.8;
     }
     void main(){
       initw();
       vec3 p=position; float h=0.0; vec3 n=vec3(0.0,1.0,0.0);
-      for(int i=0;i<4;i++){
+      for(int i=0;i<6;i++){
         float w=6.2831853/L[i]; float ph=S[i]*w;
         float amp=A[i]*uWaveScale;
         float d=dot(D[i],p.xz)*w + uTime*ph;
@@ -181,30 +186,39 @@ const oceanMat = new THREE.ShaderMaterial({
       p.y += h; vH=h;
       vN=normalize(n);
       vec4 wp=modelMatrix*vec4(p,1.0); vWorld=wp.xyz;
+      vD=length(wp.xz - cameraPosition.xz);
       gl_Position=projectionMatrix*viewMatrix*wp;
     }`,
   fragmentShader:`
     precision highp float;
-    varying vec3 vN; varying vec3 vWorld; varying float vH;
+    varying vec3 vN; varying vec3 vWorld; varying float vH; varying float vD;
     uniform vec3 uSunDir,uSunColor,uDeep,uShallow,uSky; uniform float uNight,uSunStrength;
     void main(){
       vec3 N=normalize(vN);
       vec3 V=normalize(cameraPosition - vWorld);
-      float fres=pow(1.0-max(dot(N,V),0.0),3.0);
-      vec3 water=mix(uDeep,uShallow, clamp(vH*0.55+0.5,0.0,1.0));
-      vec3 col=mix(water, uSky, fres*0.45);
-      // diffuse
-      float diff=max(dot(N,normalize(uSunDir)),0.0);
-      col += uSunColor*diff*0.18*uSunStrength;
-      // specular sun glint
-      vec3 H=normalize(normalize(uSunDir)+V);
-      float spec=pow(max(dot(N,H),0.0),120.0);
-      col += uSunColor*spec*2.4*uSunStrength;
-      // foam on crests
-      float foam=smoothstep(0.55,0.95,vH*1.3);
-      col=mix(col, vec3(0.92,0.97,1.0), foam*0.5);
-      col*=mix(0.35,1.0,1.0-uNight*0.55);
-      gl_FragColor=vec4(col,0.92);
+      vec3 L=normalize(uSunDir);
+      float fres=pow(1.0-max(dot(N,V),0.0),4.0);
+      // depth-tinted base water colour
+      vec3 water=mix(uDeep,uShallow, clamp(vH*0.6+0.45,0.0,1.0));
+      // subsurface glow on the up-facing wave backs
+      water += uShallow*0.10*max(vH,0.0);
+      vec3 col=mix(water, uSky, fres*0.55);
+      // soft diffuse
+      float diff=max(dot(N,L),0.0);
+      col += uSunColor*diff*0.16*uSunStrength;
+      // tight sun glitter + broader sheen
+      vec3 H=normalize(L+V);
+      float ndh=max(dot(N,H),0.0);
+      col += uSunColor*pow(ndh,220.0)*3.2*uSunStrength;     // sharp sparkle
+      col += uSunColor*pow(ndh,28.0)*0.35*uSunStrength;      // soft sheen
+      // crest foam
+      float foam=smoothstep(0.5,0.95,vH*1.35);
+      col=mix(col, vec3(0.95,0.99,1.0), foam*0.6);
+      // fade toward sky colour at the horizon for a softer, deeper look
+      float horizon=clamp((vD-900.0)/2600.0,0.0,1.0);
+      col=mix(col, uSky*mix(1.0,0.5,uNight), horizon*0.6);
+      col*=mix(0.32,1.0,1.0-uNight*0.6);
+      gl_FragColor=vec4(col,0.94);
     }`,
   transparent:true,
 });
@@ -232,48 +246,89 @@ function waveHeight(x,z,t,scale){
 const ship = new THREE.Group();
 scene.add(ship);
 let shipMesh = null;
-function buildShip(){
-  if(shipMesh) ship.remove(shipMesh);
-  shipMesh = new THREE.Group();
-  const spec = SHIPS[W.ship];
-  const s = spec.scale;
-  // hull
+function makeHull(color){
   const hullGeo = new THREE.BoxGeometry(4.4, 1.8, 11);
   hullGeo.translate(0,0.2,0);
-  // taper bow
-  const pos = hullGeo.attributes.position;
+  const pos = hullGeo.attributes.position;          // taper the bow
   for(let i=0;i<pos.count;i++){
     const z=pos.getZ(i);
     if(z<-4){ pos.setX(i, pos.getX(i)*0.35); pos.setY(i, pos.getY(i)*0.7); }
   }
   hullGeo.computeVertexNormals();
-  const hull = new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({color:spec.hull, roughness:.7, metalness:.1}));
-  hull.castShadow=true;
-  shipMesh.add(hull);
-  // deck
+  const hull = new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({color, roughness:.7, metalness:.12}));
+  hull.castShadow=true; return hull;
+}
+function makeSail(color, w=3.2, h=4.2){
+  const sail=new THREE.Mesh(new THREE.PlaneGeometry(w,h,6,6),
+    new THREE.MeshStandardMaterial({color, side:THREE.DoubleSide, roughness:.85}));
+  // gentle billow
+  const p=sail.geometry.attributes.position;
+  for(let i=0;i<p.count;i++){ p.setZ(i, Math.sin((p.getX(i)/w+0.5)*Math.PI)*0.5); }
+  sail.geometry.computeVertexNormals();
+  return sail;
+}
+function buildShip(){
+  if(shipMesh) ship.remove(shipMesh);
+  shipMesh = new THREE.Group();
+  const spec = SHIPS[W.ship];
+  const s = spec.scale;
+  const style = spec.style||'fisher';
+
+  // ----- hull (twin hull for catamaran) -----
+  if(style==='cata'){
+    const hL=makeHull(spec.hull); hL.position.x=-1.7; hL.scale.x=0.7; shipMesh.add(hL);
+    const hR=makeHull(spec.hull); hR.position.x= 1.7; hR.scale.x=0.7; shipMesh.add(hR);
+    const bridge=new THREE.Mesh(new THREE.BoxGeometry(4.6,0.4,7),
+      new THREE.MeshStandardMaterial({color:0xeef2f6, roughness:.5})); bridge.position.y=1.4; shipMesh.add(bridge);
+  } else {
+    shipMesh.add(makeHull(spec.hull));
+  }
+
+  // ----- deck + rails -----
   const deck = new THREE.Mesh(new THREE.BoxGeometry(4.0,0.3,10.4),
     new THREE.MeshStandardMaterial({color:0xe8c98a, roughness:.85}));
   deck.position.y=1.15; deck.castShadow=true; shipMesh.add(deck);
-  // cabin
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(3.2,2.0,3.6),
+  const railMat=new THREE.MeshStandardMaterial({color:0xb98a52,roughness:.8});
+  for(const sx of [-1.9,1.9]){
+    const rail=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.5,9.8),railMat);
+    rail.position.set(sx,1.55,0); shipMesh.add(rail);
+  }
+
+  // ----- cabin (low & sleek for speeders) -----
+  const lowCab = (style==='speeder'||style==='cata');
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(3.2, lowCab?1.2:2.0, lowCab?2.6:3.6),
     new THREE.MeshStandardMaterial({color:0xf5f5f0, roughness:.6}));
-  cabin.position.set(0,2.3,1.8); cabin.castShadow=true; shipMesh.add(cabin);
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(3.4,0.3,3.8),
-    new THREE.MeshStandardMaterial({color:0xd0453a, roughness:.6}));
-  roof.position.set(0,3.45,1.8); shipMesh.add(roof);
-  // window
+  cabin.position.set(0, lowCab?1.9:2.3, lowCab?0.6:1.8); cabin.castShadow=true; shipMesh.add(cabin);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(3.4,0.3, lowCab?2.8:3.8),
+    new THREE.MeshStandardMaterial({color: style==='exp'?0x2affff:0xd0453a, roughness:.5,
+      emissive: style==='exp'?0x1a8a8a:0x000000, emissiveIntensity: style==='exp'?0.8:0}));
+  roof.position.set(0, lowCab?2.6:3.45, cabin.position.z); shipMesh.add(roof);
   const win = new THREE.Mesh(new THREE.BoxGeometry(2.4,0.9,0.1),
     new THREE.MeshStandardMaterial({color:0x6fd0ff, emissive:0x224455, roughness:.2, metalness:.4}));
-  win.position.set(0,2.6,-0.05); shipMesh.add(win);
-  // mast + flag
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,7,8),
+  win.position.set(0, cabin.position.y+0.3, cabin.position.z-cabin.geometry.parameters.depth/2-0.02); shipMesh.add(win);
+
+  // ----- mast, sail & flag -----
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16, style==='exp'?5:7,8),
     new THREE.MeshStandardMaterial({color:0x9a6b3a}));
   mast.position.set(0,4.0,-1.2); mast.castShadow=true; shipMesh.add(mast);
+  if(style==='cutter'||style==='cata'||style==='trader'){
+    const sail=makeSail(spec.sail,3.4,4.6); sail.position.set(0,4.2,-1.0); shipMesh.add(sail);
+  }
   const flag = new THREE.Mesh(new THREE.PlaneGeometry(2.2,1.1),
     new THREE.MeshStandardMaterial({color:0xffd34d, side:THREE.DoubleSide, roughness:.7}));
   flag.position.set(1.1,6.6,-1.2); shipMesh.add(flag);
   shipMesh.userData.flag = flag;
-  // crane / harvester arm (animated when fishing)
+
+  // ----- trawler / trader cargo cranes & crates -----
+  if(style==='trawler'||style==='trader'){
+    for(const cz of [3.0,4.2]){
+      const crate=new THREE.Mesh(new THREE.BoxGeometry(1.4,1.2,1.4),
+        new THREE.MeshStandardMaterial({color:[0xff9d4d,0x5bd97a,0x6fd0ff][Math.floor(Math.random()*3)],roughness:.8}));
+      crate.position.set((Math.random()-0.5)*1.6,1.9,cz); crate.castShadow=true; shipMesh.add(crate);
+    }
+  }
+
+  // ----- harvester arm (animated when fishing) -----
   const arm = new THREE.Group();
   const armBase = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.22,0.6,8),
     new THREE.MeshStandardMaterial({color:0x444a55, metalness:.6,roughness:.4}));
@@ -286,13 +341,15 @@ function buildShip(){
   dredge.position.set(0,1.0,-7.2); arm.add(dredge);
   shipMesh.userData.arm=arm; shipMesh.userData.dredge=dredge;
   shipMesh.add(arm);
-  // experimental glow
-  if(W.ship===3){
+
+  // ----- experimental hover glow -----
+  if(style==='exp'){
     const ring=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.18,8,32),
       new THREE.MeshStandardMaterial({color:0x6fffff, emissive:0x2affff, emissiveIntensity:1.2}));
     ring.rotation.x=Math.PI/2; ring.position.y=0.5; shipMesh.add(ring);
     shipMesh.userData.ring=ring;
   }
+
   shipMesh.scale.setScalar(s);
   ship.add(shipMesh);
 }
@@ -307,51 +364,102 @@ scene.add(wake.points);
 //  5. WORLD: harbors, islands, mussel beds, points of interest
 // ============================================================================
 const HARBORS = [
-  { name:'Mosselhaven',    x:0,     z:120,   biome:'kust',   icon:'🏘️', demand:1.0, color:0xff9d4d },
-  { name:'Noorderkaap',    x:-380,  z:-820,  biome:'storm',  icon:'🏚️', demand:1.4, color:0x9fb4c4 },
-  { name:'Palmbaai',       x:980,   z:340,   biome:'tropisch',icon:'🏝️', demand:1.2, color:0x5bd97a },
-  { name:'Neveldorp',      x:-940,  z:280,   biome:'mist',   icon:'⚓', demand:1.3, color:0xb9c6cf },
-  { name:'Gouddok',        x:560,   z:-560,  biome:'kust',   icon:'🏰', demand:1.5, color:0xffd34d },
-  { name:'Verre Rede',     x:1300,  z:-1100, biome:'tropisch',icon:'🗼', demand:1.6, color:0xff7bd0 },
+  { name:'Mosselhaven', x:0,     z:160,   biome:'kust',    icon:'🏘️', demand:1.0,  color:0xff9d4d, r:42 },
+  { name:'Zonnebaai',   x:680,   z:420,   biome:'kust',    icon:'⛵', demand:1.15, color:0xffc24d, r:36 },
+  { name:'Gouddok',     x:900,   z:-760,  biome:'kust',    icon:'👑', demand:1.5,  color:0xffd34d, r:50 },
+  { name:'Noorderkaap', x:-560,  z:-1200, biome:'storm',   icon:'🏚️', demand:1.45, color:0x9fb4c4, r:44 },
+  { name:'IJszicht',    x:520,   z:-1750, biome:'storm',   icon:'🗼', demand:1.7,  color:0xbfe3ff, r:40 },
+  { name:'Palmbaai',    x:1650,  z:560,   biome:'tropisch',icon:'🏝️', demand:1.25, color:0x5bd97a, r:48 },
+  { name:'Verre Rede',  x:2100,  z:-1500, biome:'tropisch',icon:'🌴', demand:1.75, color:0xff7bd0, r:42 },
+  { name:'Neveldorp',   x:-1650, z:420,   biome:'mist',    icon:'⚓', demand:1.35, color:0xb9c6cf, r:42 },
+  { name:'Schemerkade', x:-2050, z:-1000, biome:'mist',    icon:'🏰', demand:1.6,  color:0x9a86c8, r:46 },
 ];
 const ISLANDS = [
-  { name:'Schateiland',  x:-220, z:480,  r:46, treasure:true,  visited:false },
-  { name:'Rotsklip',     x:700,  z:-180, r:34, treasure:false },
-  { name:'Palmenrif',    x:1120, z:520,  r:52, treasure:true,  visited:false },
-  { name:'Verloren Atol',x:-1180,z:-440, r:40, treasure:true,  visited:false },
-  { name:'Spiegeleiland',x:240,  z:-900, r:30, treasure:false },
+  { name:'Schateiland',   x:-240, z:560,  r:46, treasure:true,  visited:false },
+  { name:'Rotsklip',      x:760,  z:-200, r:34, treasure:false },
+  { name:'Palmenrif',     x:1300, z:640,  r:52, treasure:true,  visited:false },
+  { name:'Verloren Atol', x:-1350,z:-560, r:40, treasure:true,  visited:false },
+  { name:'Spiegeleiland', x:280,  z:-1050,r:30, treasure:false },
+  { name:'Drakeneiland',  x:1850, z:-560, r:58, treasure:true,  visited:false },
+  { name:'Koraalkroon',   x:-1950,z:780,  r:44, treasure:true,  visited:false },
+  { name:'Stormrots',     x:-80,  z:-1900,r:36, treasure:false },
+  { name:'Smaragdklip',   x:2250, z:240,  r:42, treasure:true,  visited:false },
 ];
 
 const harborMarkers=[], islandMeshes=[];
+const harborCores=[];                 // {x,z,r} solid land used for ship collision
 const poiGroup = new THREE.Group(); scene.add(poiGroup);
 
-// build harbors
+// build harbors — central land + village + lighthouse + a wooden pier (aanmeerplek)
 for(const h of HARBORS){
   const g = new THREE.Group();
-  // dock platform
-  const dock = new THREE.Mesh(new THREE.BoxGeometry(26,2,26),
-    new THREE.MeshStandardMaterial({color:0xb98a52, roughness:.9}));
-  dock.position.y=0.3; dock.receiveShadow=true; g.add(dock);
-  // little houses
-  for(let i=0;i<5;i++){
-    const hh=new THREE.Mesh(new THREE.BoxGeometry(4+Math.random()*2,3+Math.random()*3,4),
-      new THREE.MeshStandardMaterial({color:[0xff6b6b,0x6fd0ff,0xffd34d,0x5bd97a,0xff9d4d][i], roughness:.8}));
-    hh.position.set((Math.random()-0.5)*18,2,(Math.random()-0.5)*18); hh.castShadow=true; g.add(hh);
-    const roof=new THREE.Mesh(new THREE.ConeGeometry(3.6,2.4,4),
-      new THREE.MeshStandardMaterial({color:0x884422,roughness:.8}));
-    roof.position.set(hh.position.x,hh.position.y+hh.geometry.parameters.height/2+1.0,hh.position.z);
-    roof.rotation.y=Math.PI/4; g.add(roof);
+  const R = h.r;
+  const coreR = R*0.62;               // solid land radius
+  // ----- land mass -----
+  const land=new THREE.Mesh(new THREE.SphereGeometry(coreR,28,18,0,Math.PI*2,0,Math.PI*0.5),
+    new THREE.MeshStandardMaterial({color:0xc9b487, roughness:.95}));
+  land.scale.y=0.32; land.position.y=-1; land.receiveShadow=true; g.add(land);
+  const rim=new THREE.Mesh(new THREE.CylinderGeometry(coreR,coreR*1.04,2.2,28),
+    new THREE.MeshStandardMaterial({color:0x9a7d4e, roughness:1})); rim.position.y=0.2; g.add(rim);
+  // ----- village: ring of houses -----
+  const houseCols=[0xff6b6b,0x6fd0ff,0xffd34d,0x5bd97a,0xff9d4d,0xc88aff,0x4dd0e1];
+  const nHouses=6+Math.floor(R/12);
+  for(let i=0;i<nHouses;i++){
+    const ang=(i/nHouses)*Math.PI*2 + Math.random()*0.3;
+    const rr=coreR*(0.25+Math.random()*0.5);
+    const wdt=4+Math.random()*3, hgt=3+Math.random()*4;
+    const hh=new THREE.Mesh(new THREE.BoxGeometry(wdt,hgt,wdt),
+      new THREE.MeshStandardMaterial({color:houseCols[i%houseCols.length], roughness:.8}));
+    hh.position.set(Math.cos(ang)*rr, 1+hgt/2, Math.sin(ang)*rr); hh.castShadow=true; g.add(hh);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(wdt*0.85,2.6,4),
+      new THREE.MeshStandardMaterial({color:0x8a4a2a,roughness:.8}));
+    roof.position.set(hh.position.x,hh.position.y+hgt/2+1.3,hh.position.z); roof.rotation.y=Math.PI/4; g.add(roof);
   }
-  // lighthouse beacon
-  const beacon=new THREE.Mesh(new THREE.CylinderGeometry(1.4,2.2,14,12),
+  // central market stall (a splash of colour)
+  const stall=new THREE.Mesh(new THREE.BoxGeometry(5,0.4,5),
+    new THREE.MeshStandardMaterial({color:0xff7bd0,roughness:.7})); stall.position.y=3.2; g.add(stall);
+  // ----- lighthouse -----
+  const lhAng=Math.PI*0.75;
+  const lx=Math.cos(lhAng)*coreR*0.7, lz=Math.sin(lhAng)*coreR*0.7;
+  const tower=new THREE.Mesh(new THREE.CylinderGeometry(1.6,2.6,16,14),
     new THREE.MeshStandardMaterial({color:0xffffff,roughness:.6}));
-  beacon.position.set(10,7,-10); beacon.castShadow=true; g.add(beacon);
-  const lamp=new THREE.Mesh(new THREE.SphereGeometry(1.2,12,12),
+  tower.position.set(lx,8,lz); tower.castShadow=true; g.add(tower);
+  const stripe=new THREE.Mesh(new THREE.CylinderGeometry(1.62,2.0,4,14),
+    new THREE.MeshStandardMaterial({color:0xff5a4d,roughness:.6})); stripe.position.set(lx,7,lz); g.add(stripe);
+  const lamp=new THREE.Mesh(new THREE.SphereGeometry(1.3,12,12),
     new THREE.MeshStandardMaterial({color:0xffe9a8,emissive:0xffcc44,emissiveIntensity:1.4}));
-  lamp.position.set(10,14.5,-10); g.add(lamp); g.userData.lamp=lamp;
+  lamp.position.set(lx,16.8,lz); g.add(lamp); g.userData.lamp=lamp;
+  // ----- wooden pier (aanmeerplek), pointing toward open sea / map centre -----
+  const plankMat=new THREE.MeshStandardMaterial({color:0xb98a52, roughness:.9});
+  const pileMat =new THREE.MeshStandardMaterial({color:0x7a5a34, roughness:1});
+  const pierLen=R*1.15, pierW=7;
+  const deckBoard=new THREE.Mesh(new THREE.BoxGeometry(pierW,0.7,pierLen),plankMat);
+  deckBoard.position.set(0,1.0,-(coreR+pierLen/2-2)); deckBoard.receiveShadow=true; g.add(deckBoard);
+  // pilings + mooring bollards along the pier
+  for(let i=0;i<=4;i++){
+    const pz=-(coreR-2)-(pierLen/4)*i;
+    for(const sxp of [-pierW/2+0.5, pierW/2-0.5]){
+      const pile=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,4,7),pileMat);
+      pile.position.set(sxp,-0.4,pz); g.add(pile);
+    }
+  }
+  // bollards (mooring posts) at the berth end
+  for(const sxp of [-pierW/2+0.6, pierW/2-0.6]){
+    const boll=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.55,1.6,8),
+      new THREE.MeshStandardMaterial({color:0x33363b,roughness:.6,metalness:.3}));
+    boll.position.set(sxp,2.0,-(coreR+pierLen-4)); g.add(boll);
+  }
+  // a little welcome buoy just off the berth
+  const buoy=new THREE.Mesh(new THREE.SphereGeometry(1.1,10,10),
+    new THREE.MeshStandardMaterial({color:0xff3b30,emissive:0x661000,emissiveIntensity:.4,roughness:.5}));
+  buoy.position.set(pierW/2+5,0.6,-(coreR+pierLen)); g.add(buoy); g.userData.buoy=buoy;
+
+  // orient so the pier faces the map centre, then place
+  g.rotation.y=Math.atan2(h.x,h.z);
   g.position.set(h.x,0,h.z);
   poiGroup.add(g);
   harborMarkers.push({...h, group:g});
+  harborCores.push({x:h.x, z:h.z, r:coreR});
 }
 
 // build islands
@@ -409,31 +517,31 @@ function spawnBed(x,z,opts={}){
   return bed;
 }
 function biomeAt(x,z){
-  if(z < -500) return 'storm';
-  if(x > 600)  return 'tropisch';
-  if(x < -600) return 'mist';
+  if(z < -850) return 'storm';
+  if(x > 1000) return 'tropisch';
+  if(x < -1000) return 'mist';
   return 'kust';
 }
-// initial beds scattered across biomes
+// initial beds scattered across the (now much bigger) ocean
 function seedBeds(n){
   for(let i=0;i<n;i++){
-    const a=Math.random()*Math.PI*2, r=120+Math.random()*1500;
+    const a=Math.random()*Math.PI*2, r=120+Math.random()*2600;
     spawnBed(Math.cos(a)*r, Math.sin(a)*r);
   }
 }
-seedBeds(46);
+seedBeds(90);
 
 // ---- floating points of interest: bottles, stranded sailors, exotic fish ----
 const bottles=[], sailors=[], exotics=[];
 function spawnBottle(){
-  const a=Math.random()*6.28, r=200+Math.random()*1300;
+  const a=Math.random()*6.28, r=200+Math.random()*2400;
   const m=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,2,8),
     new THREE.MeshStandardMaterial({color:0x4a7a4a, transparent:true, opacity:.85, roughness:.2, metalness:.2}));
   m.rotation.z=Math.PI/2; m.position.set(Math.cos(a)*r,0,Math.sin(a)*r);
   poiGroup.add(m); bottles.push({mesh:m, x:m.position.x, z:m.position.z});
 }
 function spawnSailor(){
-  const a=Math.random()*6.28, r=300+Math.random()*1300;
+  const a=Math.random()*6.28, r=300+Math.random()*2300;
   const g=new THREE.Group();
   const raft=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.4,0.5,10),
     new THREE.MeshStandardMaterial({color:0xffaa44,roughness:.7})); raft.position.y=0.2; g.add(raft);
@@ -445,7 +553,7 @@ function spawnSailor(){
   poiGroup.add(g); sailors.push({group:g, x:g.position.x, z:g.position.z});
 }
 function spawnExotic(){
-  const a=Math.random()*6.28, r=200+Math.random()*1400;
+  const a=Math.random()*6.28, r=200+Math.random()*2500;
   const species=EXOTICS[Math.floor(Math.random()*EXOTICS.length)];
   const m=new THREE.Mesh(new THREE.ConeGeometry(0.8,2.2,7),
     new THREE.MeshStandardMaterial({color:species.color, emissive:species.color, emissiveIntensity:.25, roughness:.4}));
@@ -457,9 +565,9 @@ const EXOTICS=[
   {name:'Gouden Zeepaard',color:0xffd34d}, {name:'Diepzeelantaarn',color:0x9affc8},
   {name:'Koraalrog',color:0xff9d4d},
 ];
-for(let i=0;i<6;i++) spawnBottle();
-for(let i=0;i<4;i++) spawnSailor();
-for(let i=0;i<8;i++) spawnExotic();
+for(let i=0;i<10;i++) spawnBottle();
+for(let i=0;i<7;i++) spawnSailor();
+for(let i=0;i<14;i++) spawnExotic();
 
 // ---- seagull pet ----
 const seagull = new THREE.Group();
@@ -591,9 +699,14 @@ function nearestBed(maxD=14){
   for(const b of beds){ if(b.amount<=0) continue; const d=dist2(b.x,b.z,shipState.x,shipState.z); if(d<bd){bd=d;best=b;} }
   return best;
 }
-function nearestHarbor(maxD=34){
-  let best=null,bd=maxD*maxD;
-  for(const h of harborMarkers){ const d=dist2(h.x,h.z,shipState.x,shipState.z); if(d<bd){bd=d;best=h;} }
+function nearestHarbor(extra=36){
+  // dock when near the berth — scales with each harbour's size & pier reach
+  let best=null,bd=Infinity;
+  for(const h of harborMarkers){
+    const reach=(h.r||40)*1.6+extra;
+    const d=dist2(h.x,h.z,shipState.x,shipState.z);
+    if(d<reach*reach && d<bd){ bd=d; best=h; }
+  }
   return best;
 }
 function nearbyBottle(){ for(const b of bottles){ if(dist2(b.x,b.z,shipState.x,shipState.z)<100) return b; } return null; }
@@ -635,7 +748,7 @@ function doHarvest(dt){
     splash(b.x,b.z);
     if(b.amount<=0){ poiGroup.remove(b.group); beds.splice(beds.indexOf(b),1);
       // respawn a new bed elsewhere to keep ocean alive
-      const a=Math.random()*6.28,r=200+Math.random()*1400; spawnBed(Math.cos(a)*r,Math.sin(a)*r);
+      const a=Math.random()*6.28,r=200+Math.random()*2600; spawnBed(Math.cos(a)*r,Math.sin(a)*r);
       harvesting=false; harvestTarget=null;
     }
     updateHUD();
@@ -727,11 +840,16 @@ function musselPrice(harbor){
   return Math.round(base);
 }
 const RECIPES=[
-  {name:'Mosselen Friet', icon:'🍟', need:6,  base:120, skill:1},
-  {name:'Moules Marinière',icon:'🍲', need:10, base:240, skill:2},
-  {name:'Mosselsoep',     icon:'🥣', need:8,  base:180, skill:1},
-  {name:'Gouden Paella',  icon:'🥘', need:14, base:520, skill:3, goldNeed:1},
-  {name:'Zeevruchten Platter', icon:'🍱', need:20, base:780, skill:4, goldNeed:1},
+  {name:'Mosselen Friet',       icon:'🍟', need:6,  base:120,  skill:1},
+  {name:'Mosselsoep',           icon:'🥣', need:8,  base:180,  skill:1},
+  {name:'Moules Marinière',     icon:'🍲', need:10, base:260,  skill:2},
+  {name:'Mosselkroketten',      icon:'🧆', need:12, base:320,  skill:2},
+  {name:'Mosselrisotto',        icon:'🍚', need:14, base:400,  skill:3},
+  {name:'Mosselcurry',          icon:'🍛', need:16, base:480,  skill:3, exootNeed:1},
+  {name:'Gouden Paella',        icon:'🥘', need:18, base:620,  skill:4, goldNeed:1},
+  {name:'Bouillabaisse Royale', icon:'🍲', need:22, base:820,  skill:5, goldNeed:1, exootNeed:1},
+  {name:'Zeevruchten Platter',  icon:'🍱', need:26, base:1050, skill:6, goldNeed:2},
+  {name:'Keizers Banket',       icon:'👑', need:34, base:1600, skill:7, goldNeed:3, exootNeed:2},
 ];
 function dishPrice(r,harbor){
   let p=r.base*harbor.demand*(1+(W.skills.handel-1)*0.1);
@@ -889,11 +1007,11 @@ function tabKombuis(h){
   let cards='';
   for(const r of RECIPES){
     const locked=W.skills.koken<r.skill;
-    const enough=W.inv.mossel>=r.need && (!r.goldNeed||W.inv.goudmossel>=r.goldNeed);
+    const enough=W.inv.mossel>=r.need && (!r.goldNeed||W.inv.goudmossel>=r.goldNeed) && (!r.exootNeed||W.inv.exoot>=r.exootNeed);
     cards+=`<div class="card2">
       <h3>${r.icon} ${r.name} ${locked?`<span class="lvltag">Koken Lv.${r.skill}</span>`:''}</h3>
-      <p>Nodig: ${r.need}× 🦪 ${r.goldNeed?`+ ${r.goldNeed}× 🌟`:''}<br>Verkoopwaarde ~<span class="price">${dishPrice(r,h)} 🪙</span></p>
-      <button class="btn" ${locked||!enough?'disabled':''} onclick="window.__cook('${r.name}')">${locked?'🔒 Vergrendeld':(enough?'👨‍🍳 Koken (minigame)':'Te weinig mosselen')}</button>
+      <p>Nodig: ${r.need}× 🦪 ${r.goldNeed?`+ ${r.goldNeed}× 🌟`:''}${r.exootNeed?` + ${r.exootNeed}× 🐠`:''}<br>Verkoopwaarde ~<span class="price">${dishPrice(r,h)} 🪙</span></p>
+      <button class="btn" ${locked||!enough?'disabled':''} onclick="window.__cook('${r.name}')">${locked?'🔒 Vergrendeld':(enough?'👨‍🍳 Koken (minigame)':'Te weinig ingrediënten')}</button>
     </div>`;
   }
   return `<div class="sub">Kook rauwe mosselen tot gerechten — die brengen véél meer op. Hoe beter je timing, hoe waardevoller het bord!</div>
@@ -1064,7 +1182,7 @@ function updateCook(dt){
 }
 function finishCook(){
   const r=cookGame.recipe;
-  W.inv.mossel-=r.need; if(r.goldNeed) W.inv.goudmossel-=r.goldNeed;
+  W.inv.mossel-=r.need; if(r.goldNeed) W.inv.goudmossel-=r.goldNeed; if(r.exootNeed) W.inv.exoot-=r.exootNeed;
   cookGame.active=false;
   const qual = cookQuality/cookGame.need; // ~0..1
   cookQuality=0;
@@ -1102,15 +1220,15 @@ window.__closemap=()=>{ mapOpen=false; closeModal(); W.paused=false; };
 function closeMap(){ window.__closemap(); }
 function drawBigMap(){
   const cv=$('bigmap'); if(!cv) return; const ctx=cv.getContext('2d');
-  const R=1700; const sx=v=>(v/R*0.5+0.5)*cv.width, sy=v=>(v/R*0.5+0.5)*cv.height;
+  const R=3000; const sx=v=>(v/R*0.5+0.5)*cv.width, sy=v=>(v/R*0.5+0.5)*cv.height;
   // biome backdrop
   const grad=ctx.createLinearGradient(0,0,cv.width,cv.height);
   grad.addColorStop(0,'#0a3a63'); grad.addColorStop(1,'#072438'); ctx.fillStyle=grad; ctx.fillRect(0,0,cv.width,cv.height);
-  // biome tints
+  // biome tints (match biomeAt thresholds)
   ctx.globalAlpha=.18;
-  ctx.fillStyle='#6b7a8a'; ctx.fillRect(0,0,cv.width,sy(-500));            // storm north
-  ctx.fillStyle='#5bd97a'; ctx.fillRect(sx(600),0,cv.width-sx(600),cv.height); // tropical east
-  ctx.fillStyle='#b9c6cf'; ctx.fillRect(0,0,sx(-600),cv.height);          // misty west
+  ctx.fillStyle='#6b7a8a'; ctx.fillRect(0,0,cv.width,sy(-850));              // storm north
+  ctx.fillStyle='#5bd97a'; ctx.fillRect(sx(1000),0,cv.width-sx(1000),cv.height); // tropical east
+  ctx.fillStyle='#b9c6cf'; ctx.fillRect(0,0,sx(-1000),cv.height);           // misty west
   ctx.globalAlpha=1;
   ctx.font='16px sans-serif'; ctx.textAlign='center';
   for(const b of beds){ if(b.known){ ctx.fillText(b.golden?'🌟':'🦪',sx(b.x),sy(b.z)); } }
@@ -1236,7 +1354,7 @@ function stepSim(dt){
   let accel = (keys['w']||keys['arrowup'])?1 : (keys['s']||keys['arrowdown'])?-0.5 : 0;
   if(touchCtrl.active && touchCtrl.throttle!==0) accel = touchCtrl.throttle; // analog joystick overrides
   shipState.throttle += (accel-shipState.throttle)*Math.min(1,dt*2);
-  let maxSpeed = 26 * spec.speed * (1 + (W.engineLvl-1)*0.28) * (1+(W.skills.navigatie-1)*0.05);
+  let maxSpeed = 36 * spec.speed * (1 + (W.engineLvl-1)*0.32) * (1+(W.skills.navigatie-1)*0.06);
   if(W.buffs.snelheid) maxSpeed*=1.6;
   // weather drag
   maxSpeed *= (W.weather==='storm'?0.7 : W.weather==='rain'?0.88 : 1);
@@ -1246,29 +1364,30 @@ function stepSim(dt){
   if(keys['d']||keys['arrowright']) turn-=1;
   if(touchCtrl.active) turn += touchCtrl.turn;
   turn=Math.max(-1,Math.min(1,turn));
-  const turnRate = 1.1*(0.4+0.6*Math.min(1,Math.abs(shipState.speed)/8));
+  const turnRate = 1.25*(0.42+0.58*Math.min(1,Math.abs(shipState.speed)/12));
   shipState.heading += turn*turnRate*dt * (shipState.speed<0?-1:1);
   // wind nudge
   shipState.x += (Math.sin(shipState.heading)*shipState.speed + W.wind.x* (wm.wave))*dt;
   shipState.z += (Math.cos(shipState.heading)*shipState.speed + W.wind.y* (wm.wave))*dt;
   // clamp to world
-  const lim=1850;
+  const lim=2900;
   shipState.x=Math.max(-lim,Math.min(lim,shipState.x));
   shipState.z=Math.max(-lim,Math.min(lim,shipState.z));
 
-  // ---- island collision: push the hull back to the beach edge ----
-  for(const isl of islandMeshes){
-    const dx=shipState.x-isl.x, dz=shipState.z-isl.z;
+  // ---- island & harbour-land collision: push the hull back to the edge ----
+  const pushOut=(cx,cz,minD)=>{
+    const dx=shipState.x-cx, dz=shipState.z-cz;
     const d=Math.hypot(dx,dz);
-    const minD=isl.r+6;                 // beach edge + hull margin
     if(d<minD && d>0.001){
       const nx=dx/d, nz=dz/d;
-      shipState.x=isl.x+nx*minD;        // slide out along the radial normal
-      shipState.z=isl.z+nz*minD;
+      shipState.x=cx+nx*minD;           // slide out along the radial normal
+      shipState.z=cz+nz*minD;
       shipState.speed*=0.25;            // bump kills most forward momentum
       shipState.throttle*=0.25;
     }
-  }
+  };
+  for(const isl of islandMeshes) pushOut(isl.x, isl.z, isl.r+6);     // beach edge + hull margin
+  for(const c of harborCores)    pushOut(c.x,   c.z,   c.r+6);       // harbour land (pier stays clear)
 
   // ---- float ship on waves ----
   const t=oceanUniforms.uTime.value, sc=oceanUniforms.uWaveScale.value;
@@ -1304,8 +1423,12 @@ function stepSim(dt){
   for(const s of sailors) s.group.position.y=waveHeight(s.x,s.z,t,sc);
   for(const e of exotics){ e.mesh.position.y=waveHeight(e.x,e.z,t,sc)-0.6+Math.sin(t*2+e.x)*0.3; e.mesh.rotation.z=Math.sin(t+e.x)*0.4; }
   for(const b of beds){ b.group.children.forEach((c,i)=>{ c.rotation.y+=dt*0.5; }); }
-  // harbor beacon pulse
-  for(const h of harborMarkers){ if(h.group.userData.lamp) h.group.userData.lamp.material.emissiveIntensity=1.0+Math.sin(t*3)*0.6; }
+  // harbor beacon pulse + buoy bob
+  for(const h of harborMarkers){
+    const ud=h.group.userData;
+    if(ud.lamp) ud.lamp.material.emissiveIntensity=1.0+Math.sin(t*3)*0.6;
+    if(ud.buoy) ud.buoy.position.y=0.6+Math.sin(t*2+h.x)*0.5;
+  }
   // island treasure glints
   for(const i of islandMeshes){ if(i.group.userData.gold&&i.group.userData.gold.visible){ i.group.userData.gold.rotation.y+=dt; } }
 

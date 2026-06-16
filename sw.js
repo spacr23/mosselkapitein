@@ -1,6 +1,6 @@
 // Mosselkapitein service worker — offline play + instant reloads.
 // Bump CACHE when you change index.html / game.js so phones pick up the new version.
-const CACHE = 'mosselkapitein-v1';
+const CACHE = 'mosselkapitein-v2';
 
 // Same-origin app shell + the Three.js modules from the CDN.
 const ASSETS = [
