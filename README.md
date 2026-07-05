@@ -90,10 +90,15 @@ besturing op het scherm:
   redden ⛑️, exotische zeedieren voor je **aquarium** 🐠, **gouden mosselen** met
   unieke krachten 🌟, **flessenpost** met missies 📜, een **meeuw** als hulpdier 🐦
   en een **drijvend restaurant** voor passief inkomen 🍽️.
-- **Baasgevecht — de Kraken** 🦑: een reuzenoctopus die schuilt in de mistige
-  diepte (west/noordwest). Koop een **harpoenkanon** 🔱 op de werf (toets `H` of
-  de 🔱-knop), zoek de Kraken op en versla hem — pas op voor zijn tentakels die
-  je romp beschadigen! Beloning: zeldzame **krakeninkt**, veel goud en XP.
+- **Zeemonsters** — koop een **harpoenkanon** 🔱 op de werf (toets `H` of de
+  🔱-knop) en jaag op ze:
+  - **De Kraken** 🦑: reuzenoctopus in de mistige diepte (west/noordwest). Zijn
+    tentakels beschadigen je romp en stelen mosselen. Buit: **krakeninkt**.
+  - **De Zeeslang** 🐉: kronkelt door de stormachtige noordzee en ramt je schip
+    als hij je ziet — vlucht met een snelle boot of vecht. Buit: **schubben**.
+  - **Het Spookschip** 👻: glijdt 's nachts doorschijnend over het water. Enter
+    het (E / ⚓ Actie) voor spookgoud… maar pas op voor de **spookvloek** die je
+    schip tijdelijk vertraagt.
 - **Zeekaart** (`M`) en **sonar-radar** voor navigatie.
 
 ## 🌍 Gratis online hosten

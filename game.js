@@ -11,15 +11,17 @@ const W = {
   skills: { navigatie: 1, koken: 1, handel: 1, visserij: 1 },
   skillXp: { navigatie: 0, koken: 0, handel: 0, visserij: 0 },
   // inventory
-  inv: { mossel: 0, goudmossel: 0, exoot: 0, krakeninkt: 0 },
+  inv: { mossel: 0, goudmossel: 0, exoot: 0, krakeninkt: 0, schub: 0 },
   dishes: {}, // dishName -> count
   // ship & upgrades
   ship: 0,                 // index in SHIPS
   holdMax: 40,
   engineLvl: 1, harvestLvl: 1, sonarLvl: 1,
   hasWeatherMachine: false, hasSeagull: false, hasRestaurant: false,
-  hasHarpoon: false, hull: 100, hullMax: 100,   // harpoon + hull integrity for kraken fights
+  hasHarpoon: false, hull: 100, hullMax: 100,   // harpoon + hull integrity for monster fights
   krakensSlain: 0, krakenGoneUntilDay: 0,       // boss progress
+  serpentsSlain: 0, serpentGoneUntilDay: 0,     // sea serpent progress
+  ghostsLooted: 0,                              // ghost ship plunders
   seagullName: 'Pip',
   aquarium: [],            // exotic species names
   // run-time
@@ -645,32 +647,46 @@ const harpoonMat=new THREE.MeshStandardMaterial({color:0xcfd6de,metalness:.7,rou
 
 function krakenActive(){ return kraken.state==='rising'||kraken.state==='fight'; }
 function refreshHarpoonBtn(){ const b=$('abHarpoon'); if(b) b.style.display=W.hasHarpoon?'flex':'none'; }
-function bossbarShow(v){ const b=$('bossbar'); if(b) b.style.display=v?'flex':'none'; }
+function bossbarShow(v,title){ const b=$('bossbar'); if(b) b.style.display=v?'flex':'none';
+  if(title){ const t=$('bossTitle'); if(t) t.textContent=title; } }
+// nearest harpoon-able monster (kraken and/or sea serpent)
+function activeTargets(){
+  const list=[];
+  if(krakenActive()) list.push({x:kraken.x, z:kraken.z, r:22, hit:krakenHit});
+  if(serpent.state==='chase'||serpent.state==='fight') list.push({x:serpent.x, z:serpent.z, r:16, hit:serpentHit});
+  return list;
+}
+let currentBoss=null; // whichever monster the boss bar is tracking
 function bossbarUpdate(){
-  const hp=$('bossHp'); if(hp) hp.style.width=Math.max(0,kraken.hp/kraken.hpMax*100)+'%';
+  const b=currentBoss||kraken;
+  const hp=$('bossHp'); if(hp) hp.style.width=Math.max(0,b.hp/b.hpMax*100)+'%';
   const hu=$('hullFill'); if(hu) hu.style.width=Math.max(0,W.hull/W.hullMax*100)+'%';
 }
 function flashDamage(){ const f=$('dmgFlash'); if(!f) return; f.style.transition='none'; f.style.opacity='.55';
   requestAnimationFrame(()=>{ f.style.transition='opacity .5s'; f.style.opacity='0'; }); }
 
 function beginKrakenFight(){
-  kraken.state='rising'; kraken.known=true; kraken.lootDropped=false;
+  kraken.state='rising'; kraken.known=true; kraken.lootDropped=false; currentBoss=kraken;
   kraken.hpMax = 90 + W.level*12; kraken.hp=kraken.hpMax;
   W.hull=W.hullMax; kraken.group.visible=true; kraken.attackTimer=3.2;
-  bossbarShow(true); bossbarUpdate();
+  bossbarShow(true,'🦑 De Kraken'); bossbarUpdate();
   toast('🦑 DE KRAKEN ONTWAAKT! Vuur je harpoen (🔱) en overleef!','bad');
   beep(120,.4,0.05); setTimeout(()=>beep(90,.5,0.05),260); setTimeout(()=>beep(70,.6,0.05),560);
 }
 function fireHarpoon(){
   if(!W.started||W.paused) return;
   if(!W.hasHarpoon){ toast('🔱 Je hebt nog geen harpoen — koop er een op de Werf.','bad'); return; }
-  if(!krakenActive()){ toast('🔱 Geen doelwit in zicht. Zoek de Kraken in de mist.'); return; }
+  const targets=activeTargets();
+  if(!targets.length){ toast('🔱 Geen doelwit in zicht. Monsters schuilen in mist, storm en nacht…'); return; }
   if(harpoonCd>0) return;
   harpoonCd=0.6;
+  // aim at the nearest active monster
+  let tg=targets[0], bd=Infinity;
+  for(const t of targets){ const d=dist2(t.x,t.z,shipState.x,shipState.z); if(d<bd){bd=d; tg=t;} }
   const sp=new THREE.Mesh(harpoonGeo,harpoonMat);
   const sx=shipState.x, sz=shipState.z, sy=ship.position.y+2.5;
   sp.position.set(sx,sy,sz);
-  const dx=kraken.x-sx, dz=kraken.z-sz, d=Math.hypot(dx,dz)||1;
+  const dx=tg.x-sx, dz=tg.z-sz, d=Math.hypot(dx,dz)||1;
   sp.rotation.z=Math.PI/2; sp.rotation.y=Math.atan2(dx,dz);
   scene.add(sp);
   harpoons.push({mesh:sp, x:sx, z:sz, dx:dx/d, dz:dz/d, life:0});
@@ -681,9 +697,10 @@ function updateHarpoons(dt){
     const h=harpoons[i]; h.life+=dt;
     h.x+=h.dx*150*dt; h.z+=h.dz*150*dt;
     h.mesh.position.set(h.x, ship.position.y+2.5, h.z);
-    const hit = krakenActive() && dist2(h.x,h.z,kraken.x,kraken.z) < 22*22;
-    if(hit || h.life>2.2){
-      if(hit) krakenHit(11 + W.harvestLvl*2);
+    let struck=null;
+    for(const t of activeTargets()){ if(dist2(h.x,h.z,t.x,t.z) < t.r*t.r){ struck=t; break; } }
+    if(struck || h.life>2.2){
+      if(struck) struck.hit(11 + W.harvestLvl*2);
       scene.remove(h.mesh); harpoons.splice(i,1);
     }
   }
@@ -738,8 +755,8 @@ function updateKraken(dt){
   // respawn after enough days have passed
   if(kraken.state==='gone'){ if(W.day>=W.krakenGoneUntilDay){ kraken.state='lurking'; kraken.hp=kraken.hpMax;
     kraken.x=KRAKEN_LAIR.x; kraken.z=KRAKEN_LAIR.z; kraken.group.position.set(kraken.x,-60,kraken.z); } return; }
-  // hull slowly self-repairs outside of a fight
-  if(kraken.state!=='fight' && W.hull<W.hullMax) W.hull=Math.min(W.hullMax, W.hull+dt*4);
+  // hull slowly self-repairs outside of any monster fight
+  if(kraken.state!=='fight' && !serpentActive() && W.hull<W.hullMax) W.hull=Math.min(W.hullMax, W.hull+dt*4);
 
   if(kraken.state==='lurking'){
     kraken.group.visible=false;
@@ -788,6 +805,231 @@ function updateKraken(dt){
     kraken.group.position.y-=dt*14;
     for(const e of kraken.eyes) e.material.emissiveIntensity*=0.94;
     if(kraken.group.position.y<-70){ kraken.state='gone'; kraken.group.visible=false; }
+  }
+}
+
+// ============================================================================
+//  5c. ZEESLANG — serpent that hunts the stormy north
+// ============================================================================
+const SERPENT_HOME = { x:0, z:-1800 };
+const serpent = { group:new THREE.Group(), segs:[], state:'roam', hp:70, hpMax:70,
+  x:SERPENT_HOME.x, z:SERPENT_HOME.z, heading:0, wander:0, attackTimer:2.5, known:false, sink:0 };
+(function buildSerpent(){
+  const g=serpent.group;
+  const mat=new THREE.MeshStandardMaterial({color:0x2fa88a, roughness:.5, metalness:.1,
+    flatShading:true, emissive:0x0a3a2e, emissiveIntensity:.25});
+  const bellyMat=new THREE.MeshStandardMaterial({color:0x9fe8c8, roughness:.7, flatShading:true});
+  const finMat=new THREE.MeshStandardMaterial({color:0xff9d4d, roughness:.6, flatShading:true, side:THREE.DoubleSide});
+  // head
+  const head=new THREE.Group();
+  const skull=new THREE.Mesh(new THREE.SphereGeometry(5,12,10), mat); skull.scale.set(1,0.9,1.4); head.add(skull);
+  const jaw=new THREE.Mesh(new THREE.ConeGeometry(3.2,7,8), mat); jaw.rotation.x=Math.PI/2; jaw.position.set(0,-1,5.4); head.add(jaw);
+  for(const ex of [-2.2,2.2]){ const eye=new THREE.Mesh(new THREE.SphereGeometry(1.2,10,10),
+    new THREE.MeshStandardMaterial({color:0xffd34d,emissive:0xffb020,emissiveIntensity:1.1}));
+    eye.position.set(ex,1.6,2.6); head.add(eye); }
+  for(const hx of [-1.6,1.6]){ const horn=new THREE.Mesh(new THREE.ConeGeometry(0.8,4,6),
+    new THREE.MeshStandardMaterial({color:0xf0e6c8,roughness:.8}));
+    horn.position.set(hx,4,-0.5); horn.rotation.x=-0.3; head.add(horn); }
+  g.add(head); serpent.head=head; serpent.segs.push({obj:head, x:serpent.x, z:serpent.z, y:0});
+  // body segments with dorsal fins
+  const N=9;
+  for(let i=1;i<=N;i++){
+    const r=4.2*(1-i/(N+2));
+    const seg=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.SphereGeometry(Math.max(r,1),10,8), mat); seg.add(body);
+    const belly=new THREE.Mesh(new THREE.SphereGeometry(Math.max(r*0.75,0.7),8,6), bellyMat);
+    belly.position.y=-r*0.35; seg.add(belly);
+    if(i<N-1){ const fin=new THREE.Mesh(new THREE.ConeGeometry(r*0.5,r*1.4,4), finMat);
+      fin.position.y=r*1.1; seg.add(fin); }
+    if(i===N){ const tail=new THREE.Mesh(new THREE.ConeGeometry(r*1.6,r*3,4), finMat);
+      tail.rotation.x=Math.PI/2; tail.position.z=-r*2; seg.add(tail); }
+    g.add(seg);
+    serpent.segs.push({obj:seg, x:serpent.x, z:serpent.z-i*9, y:0});
+  }
+  g.visible=false; scene.add(g);
+})();
+
+function serpentActive(){ return serpent.state==='chase'||serpent.state==='fight'; }
+function serpentHit(dmg){
+  if(serpent.state==='gone'||serpent.state==='dying') return;
+  serpent.hp-=dmg;
+  splash(serpent.x+(Math.random()-0.5)*14, serpent.z+(Math.random()-0.5)*14);
+  beep(340,.06); bossbarUpdate();
+  if(serpent.hp<=0) serpentDefeated();
+}
+function serpentDefeated(){
+  serpent.state='dying'; serpent.sink=0;
+  const scales=3+Math.floor(W.level/4); W.inv.schub+=scales;
+  const gold=900+W.level*50; W.gold+=gold; W.totalEarned+=gold;
+  W.serpentsSlain++; W.serpentGoneUntilDay=W.day+3;
+  toast(`🏆 ZEESLANG VERSLAGEN! +${scales}× 🐲 schubben en +${gold} 🪙!`,'gold');
+  gainXP(200); confettiBurst(serpent.x,serpent.z);
+  beep(523,.12); setTimeout(()=>beep(659,.12),140); setTimeout(()=>beep(880,.2),300);
+  bossbarShow(false); W.hull=W.hullMax; checkQuests(); updateHUD();
+  if(typeof saveGame==='function') saveGame();
+}
+function updateSerpent(dt){
+  const t=oceanUniforms.uTime.value, sc=oceanUniforms.uWaveScale.value;
+  if(serpent.state==='gone'){
+    if(W.day>=W.serpentGoneUntilDay){ serpent.state='roam'; serpent.hp=serpent.hpMax=70+W.level*8;
+      serpent.x=SERPENT_HOME.x; serpent.z=SERPENT_HOME.z;
+      for(const s of serpent.segs){ s.x=serpent.x; s.z=serpent.z; } }
+    return;
+  }
+  serpent.group.visible = W.started;
+  if(serpent.state==='roam'){
+    // wander the storm biome
+    serpent.wander+=dt;
+    serpent.heading += Math.sin(serpent.wander*0.35)*0.5*dt;
+    const spd=14;
+    serpent.x += Math.sin(serpent.heading)*spd*dt;
+    serpent.z += Math.cos(serpent.heading)*spd*dt;
+    // stay inside the storm zone
+    if(serpent.z>-1000) serpent.heading=Math.PI+((Math.random()-0.5)*0.6), serpent.z=-1000;
+    if(serpent.z<-2700) serpent.z=-2700, serpent.heading=(Math.random()-0.5)*0.6;
+    if(serpent.x>1400) serpent.x=1400, serpent.heading=-Math.PI/2;
+    if(serpent.x<-1400) serpent.x=-1400, serpent.heading=Math.PI/2;
+    // spot the player
+    const d2=dist2(shipState.x,shipState.z,serpent.x,serpent.z);
+    if(d2<90*90) serpent.known=true;
+    if(d2<240*240 && W.started && !W.paused){
+      serpent.state='chase'; serpent.known=true; currentBoss=serpent; W.hull=W.hullMax;
+      bossbarShow(true,'🐉 De Zeeslang'); bossbarUpdate();
+      toast('🐉 DE ZEESLANG heeft je gezien! Vlucht of vecht (🔱)!','bad');
+      beep(160,.3,0.05); setTimeout(()=>beep(120,.4,0.05),200);
+    }
+  } else if(serpent.state==='chase'){
+    const dx=shipState.x-serpent.x, dz=shipState.z-serpent.z, d=Math.hypot(dx,dz)||1;
+    serpent.heading=Math.atan2(dx,dz);
+    const spd = 26; // fast — outrun it with a quick boat or fight
+    if(d>26){ serpent.x+=dx/d*spd*dt; serpent.z+=dz/d*spd*dt; }
+    serpent.attackTimer-=dt;
+    if(serpent.attackTimer<=0 && d<42){
+      serpent.attackTimer=2.8+Math.random();
+      damageHull(10+Math.floor(W.level*0.5));
+      const nx=dx/d, nz=dz/d;
+      shipState.x+=nx*8; shipState.z+=nz*8; shipState.speed*=0.5;
+      splash(shipState.x,shipState.z); beep(150,.2,0.05);
+      toast('🐉 De zeeslang ramt je schip!','bad');
+      if(W.hull<=0){
+        // repelled: lose some catch and get flung clear
+        const lost=Math.floor(holdCount()*0.1);
+        if(lost>0){ const tk=Math.min(lost,W.inv.mossel); W.inv.mossel-=tk; }
+        shipState.x=serpent.x+nx*550; shipState.z=Math.min(-950,serpent.z+nz*550); shipState.speed=0;
+        serpent.state='roam'; serpent.hp=serpent.hpMax; W.hull=W.hullMax; bossbarShow(false);
+        toast('🚨 De zeeslang joeg je weg uit de stormzone!','bad'); updateHUD();
+      }
+    }
+    // escaped?
+    if(d>600){ serpent.state='roam'; serpent.hp=serpent.hpMax; W.hull=W.hullMax; bossbarShow(false);
+      toast('🌊 De zeeslang geeft de jacht op…'); }
+  } else if(serpent.state==='dying'){
+    serpent.sink+=dt;
+    if(serpent.sink>3){ serpent.state='gone'; serpent.group.visible=false; return; }
+  }
+  // ---- chain: each segment trails the one before it ----
+  const segs=serpent.segs, spacing=9;
+  segs[0].x=serpent.x; segs[0].z=serpent.z;
+  for(let i=1;i<segs.length;i++){
+    const p=segs[i-1], s=segs[i];
+    const dx=s.x-p.x, dz=s.z-p.z, d=Math.hypot(dx,dz)||1;
+    s.x=p.x+dx/d*spacing; s.z=p.z+dz/d*spacing;
+  }
+  // undulate over/under the surface; sink when dying
+  const sinkY = serpent.state==='dying' ? -serpent.sink*8 : 0;
+  for(let i=0;i<segs.length;i++){
+    const s=segs[i];
+    const wave = Math.sin(t*2.2 - i*0.85)*3.2;
+    const y = waveHeight(s.x,s.z,t,sc) + wave + (i===0?2.5:0) + sinkY;
+    s.obj.position.set(s.x, y, s.z);
+    if(i<segs.length-1){ const n=segs[i+1]; s.obj.lookAt(n.obj.position.x, y, n.obj.position.z); s.obj.rotateY(Math.PI); }
+  }
+}
+
+// ============================================================================
+//  5d. SPOOKSCHIP — a ghostly ship that drifts through the night
+// ============================================================================
+const ghost = { group:new THREE.Group(), state:'hidden', x:0, z:0, heading:0, fade:0, spawnedNight:false };
+(function buildGhost(){
+  const g=ghost.group;
+  const mat=new THREE.MeshStandardMaterial({color:0x9fffcf, transparent:true, opacity:0.4,
+    roughness:.3, emissive:0x2fae7a, emissiveIntensity:.7, depthWrite:false});
+  const sailMat=new THREE.MeshStandardMaterial({color:0xcfffe8, transparent:true, opacity:0.28,
+    emissive:0x3fdF9a, emissiveIntensity:.5, side:THREE.DoubleSide, depthWrite:false});
+  ghost.mats=[mat,sailMat];
+  // hull
+  const hull=new THREE.Mesh(new THREE.BoxGeometry(6,3,20), mat);
+  hull.position.y=1.5; g.add(hull);
+  const bow=new THREE.Mesh(new THREE.ConeGeometry(3,6,4), mat); bow.rotation.x=Math.PI/2; bow.rotation.y=Math.PI/4; bow.position.set(0,1.5,12); g.add(bow);
+  // masts + tattered sails
+  for(const mz of [-5,3]){
+    const mast=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.3,16,6), mat);
+    mast.position.set(0,10,mz); g.add(mast);
+    const sail=new THREE.Mesh(new THREE.PlaneGeometry(7,8,4,4), sailMat);
+    // ragged bottom edge
+    const p=sail.geometry.attributes.position;
+    for(let i=0;i<p.count;i++){ if(p.getY(i)<-3) p.setY(i, -3-Math.random()*1.6); }
+    sail.geometry.computeVertexNormals();
+    sail.position.set(0,10,mz-0.6); g.add(sail);
+  }
+  // eerie lantern
+  const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.9,8,8),
+    new THREE.MeshStandardMaterial({color:0xbaffdf,emissive:0x6fffc0,emissiveIntensity:2}));
+  lamp.position.set(0,4.5,-9); g.add(lamp); ghost.lamp=lamp;
+  g.visible=false; scene.add(g);
+})();
+
+function isNight(){ return W.time>=21 || W.time<5; }
+function nearbyGhost(){ return (ghost.state==='sailing' && ghost.fade>0.5 &&
+  dist2(ghost.x,ghost.z,shipState.x,shipState.z)<45*45) ? ghost : null; }
+function lootGhost(){
+  const g=250+W.level*40+Math.floor(Math.random()*200);
+  W.gold+=g; W.totalEarned+=g; W.ghostsLooted++;
+  if(Math.random()<0.3){
+    W.buffs.spookvloek=50;
+    toast(`👻 Spookgoud: +${g} 🪙 … maar een VLOEK grijpt je schip! (traag tot hij wegebt)`,'bad');
+    beep(110,.5,0.05);
+  } else {
+    toast(`👻 Je plundert het spookschip: +${g} 🪙 spookgoud!`,'gold');
+    beep(660,.1); setTimeout(()=>beep(880,.12),120);
+  }
+  gainXP(80); confettiBurst(ghost.x,ghost.z);
+  ghost.state='hidden'; ghost.group.visible=false;
+  checkQuests(); updateHUD();
+}
+function applyGhostFade(){
+  for(const m of ghost.mats) m.opacity=(m===ghost.mats[0]?0.4:0.28)*ghost.fade;
+  if(ghost.lamp) ghost.lamp.material.emissiveIntensity=2*ghost.fade*(1+Math.sin(oceanUniforms.uTime.value*3)*0.3);
+}
+function ghostDrift(dt){
+  const t=oceanUniforms.uTime.value, sc=oceanUniforms.uWaveScale.value;
+  ghost.heading+=Math.sin(t*0.2)*0.15*dt;
+  ghost.x+=Math.sin(ghost.heading)*6*dt; ghost.z+=Math.cos(ghost.heading)*6*dt;
+  ghost.group.position.set(ghost.x, waveHeight(ghost.x,ghost.z,t,sc), ghost.z);
+  ghost.group.rotation.y=ghost.heading;
+}
+function updateGhost(dt){
+  if(!isNight()){
+    ghost.spawnedNight=false;
+    if(ghost.state==='sailing'){       // dawn: fade away
+      ghost.fade-=dt*0.4;
+      if(ghost.fade<=0){ ghost.state='hidden'; ghost.group.visible=false; return; }
+      applyGhostFade(); ghostDrift(dt);
+    }
+    return;
+  }
+  // night: spawn once per night, somewhere off in the dark
+  if(ghost.state==='hidden' && !ghost.spawnedNight && W.started){
+    ghost.spawnedNight=true;
+    const a=Math.random()*6.28, r=380+Math.random()*260;
+    ghost.x=shipState.x+Math.cos(a)*r; ghost.z=shipState.z+Math.sin(a)*r;
+    const lim=2800; ghost.x=Math.max(-lim,Math.min(lim,ghost.x)); ghost.z=Math.max(-lim,Math.min(lim,ghost.z));
+    ghost.heading=Math.random()*6.28; ghost.fade=0; ghost.state='sailing'; ghost.group.visible=true;
+    toast('👻 Een bleek schijnsel glijdt over het water… een spookschip!','gold');
+  }
+  if(ghost.state==='sailing'){
+    ghost.fade=Math.min(1,ghost.fade+dt*0.3);
+    applyGhostFade(); ghostDrift(dt);
   }
 }
 
@@ -967,6 +1209,7 @@ function holdCount(){ return W.inv.mossel + W.inv.goudmossel; }
 
 function tryInteract(){
   if(W.paused) return;
+  const gh=nearbyGhost(); if(gh){ lootGhost(); return; }
   const h=nearestHarbor(); if(h){ openHarbor(h); return; }
   const isl=nearbyIsland(); if(isl){ visitIsland(isl); return; }
   const b=nearbyBottle(); if(b){ openBottle(b); return; }
@@ -1142,6 +1385,8 @@ const QUESTS=[
   {id:'q8', t:'Koop een groter schip',         check:()=>W.ship>=1, reward:500},
   {id:'q9', t:'Rust een harpoenkanon uit',     check:()=>W.hasHarpoon, reward:200},
   {id:'q10',t:'Versla de Kraken',              check:()=>W.krakensSlain>=1, reward:1000},
+  {id:'q11',t:'Versla de Zeeslang',            check:()=>W.serpentsSlain>=1, reward:800},
+  {id:'q12',t:'Plunder een spookschip',        check:()=>W.ghostsLooted>=1, reward:600},
 ];
 W.totalCaught=0; W.totalCooked=0; W.totalEarned=0; W.totalGold=0;
 function checkQuests(){
@@ -1222,6 +1467,7 @@ function tabVerkoop(h){
   rows+=invRow('🌟 Gouden mosselen', W.inv.goudmossel, mp*8, ()=>`window.__sell('goudmossel')`);
   rows+=invRow('🐠 Exotische dieren', W.inv.exoot, 60, ()=>`window.__sell('exoot')`,'(of doneer aan aquarium)');
   rows+=invRow('🖋️ Krakeninkt', W.inv.krakeninkt, 220, ()=>`window.__sell('krakeninkt')`,'(zeldzame buit van de Kraken)');
+  rows+=invRow('🐲 Zeeslangschubben', W.inv.schub, 150, ()=>`window.__sell('schub')`,'(glinsterende buit van de zeeslang)');
   // dishes
   let dishRows='';
   for(const r of RECIPES){
@@ -1329,7 +1575,7 @@ window.__close=closeModal;
 window.__tab=t=>{ curTab=t; renderHarbor(); };
 window.__sell=kind=>{
   if(W.inv[kind]<=0) return;
-  let price = kind==='goudmossel'? musselPrice(curHarbor)*8 : kind==='exoot'? 60 : kind==='krakeninkt'? 220 : musselPrice(curHarbor);
+  let price = kind==='goudmossel'? musselPrice(curHarbor)*8 : kind==='exoot'? 60 : kind==='krakeninkt'? 220 : kind==='schub'? 150 : musselPrice(curHarbor);
   W.inv[kind]--; W.gold+=price; W.totalEarned+=price; gainSkill('handel',1.2);
   beep(720,.05); renderHarbor(); updateHUD(); checkQuests();
 };
@@ -1609,6 +1855,8 @@ function drawBigMap(){
   for(const h of harborMarkers){ ctx.fillText(h.icon,sx(h.x),sy(h.z)); ctx.fillStyle='#9fc4dd'; ctx.font='10px sans-serif'; ctx.fillText(h.name,sx(h.x),sy(h.z)+14); ctx.font='20px sans-serif'; }
   // kraken lair (once discovered)
   if(kraken.known && kraken.state!=='gone'){ ctx.fillText('🦑',sx(kraken.x),sy(kraken.z)); ctx.fillStyle='#ff8ab0'; ctx.font='10px sans-serif'; ctx.fillText('Kraken',sx(kraken.x),sy(kraken.z)+14); ctx.font='20px sans-serif'; }
+  // sea serpent (once spotted)
+  if(serpent.known && serpent.state!=='gone'){ ctx.fillText('🐉',sx(serpent.x),sy(serpent.z)); ctx.fillStyle='#7fe8c0'; ctx.font='10px sans-serif'; ctx.fillText('Zeeslang',sx(serpent.x),sy(serpent.z)+14); ctx.font='20px sans-serif'; }
   // ship
   ctx.fillText('🚢',sx(shipState.x),sy(shipState.z));
 }
@@ -1640,6 +1888,8 @@ function drawSonar(){
   for(const b of beds){ if(b.known||dist2(b.x,b.z,shipState.x,shipState.z)<(range*0.6)**2) blip(b.x,b.z, b.golden?'#ffd34d':'#5bd97a', b.golden?4:3); }
   for(const h of harborMarkers) blip(h.x,h.z,'#ff9d4d',4);
   if(kraken.known && kraken.state!=='gone'){ const big=krakenActive(); blip(kraken.x,kraken.z, big?'#ff3355':'#b95fd0', big?(6+Math.sin(oceanUniforms.uTime.value*8)*2):4); }
+  if(serpent.state!=='gone' && serpent.state!=='dying'){ const agro=serpentActive(); blip(serpent.x,serpent.z, agro?'#ff5a3d':'#3fd9a8', agro?(5+Math.sin(oceanUniforms.uTime.value*8)*2):3.5); }
+  if(ghost.state==='sailing' && ghost.fade>0.3) blip(ghost.x,ghost.z,'#baffdf',4);
   for(const i of islandMeshes) blip(i.x,i.z, i.treasure&&!i.visited?'#ffd34d':'#b98a52',3);
   for(const bt of bottles) blip(bt.x,bt.z,'#9affc8',2.5);
   for(const s of sailors) blip(s.x,s.z,'#ff6b6b',3);
@@ -1729,6 +1979,7 @@ function stepSim(dt){
   shipState.throttle += (accel-shipState.throttle)*Math.min(1,dt*2);
   let maxSpeed = 36 * spec.speed * (1 + (W.engineLvl-1)*0.32) * (1+(W.skills.navigatie-1)*0.06);
   if(W.buffs.snelheid) maxSpeed*=1.6;
+  if(W.buffs.spookvloek) maxSpeed*=0.6;   // ghost-ship curse until it wears off
   // weather drag
   maxSpeed *= (W.weather==='storm'?0.7 : W.weather==='rain'?0.88 : 1);
   shipState.speed += (shipState.throttle*maxSpeed - shipState.speed)*Math.min(1,dt*1.4);
@@ -1791,8 +2042,10 @@ function stepSim(dt){
   // ---- seagull ----
   updateSeagull(dt);
 
-  // ---- kraken boss ----
+  // ---- monsters ----
   updateKraken(dt);
+  updateSerpent(dt);
+  updateGhost(dt);
 
   // ---- POI bob ----
   for(const bt of bottles) bt.mesh.position.y=waveHeight(bt.x,bt.z,t,sc)+0.3;
@@ -1914,6 +2167,8 @@ function updateCamera(dt){
 
 function updatePrompt(){
   if(W.paused){ hidePrompt(); return; }
+  const gh=nearbyGhost();
+  if(gh){ showPrompt(`<b>👻 Spookschip!</b><br>${A_E} Enteren en plunderen… durf jij?`); return; }
   const h=nearestHarbor();
   if(h){ showPrompt(`<b>${h.icon} ${h.name}</b><br>${A_E} Aanmeren — verkoop, kook & upgrade`); return; }
   const isl=nearbyIsland();
@@ -2116,6 +2371,7 @@ function saveGame(){
       engineLvl:W.engineLvl, harvestLvl:W.harvestLvl, sonarLvl:W.sonarLvl,
       hasWeatherMachine:W.hasWeatherMachine, hasSeagull:W.hasSeagull, hasRestaurant:W.hasRestaurant,
       hasHarpoon:W.hasHarpoon, hull:W.hull, krakensSlain:W.krakensSlain, krakenGoneUntilDay:W.krakenGoneUntilDay,
+      serpentsSlain:W.serpentsSlain, serpentGoneUntilDay:W.serpentGoneUntilDay, ghostsLooted:W.ghostsLooted,
       seagullName:W.seagullName, aquarium:W.aquarium,
       time:W.time, day:W.day,
       questsDone:[...W.questsDone],
@@ -2137,10 +2393,12 @@ function loadGame(){
   const keys=['gold','level','xp','xpNext','skills','skillXp','inv','dishes','ship','holdMax',
     'engineLvl','harvestLvl','sonarLvl','hasWeatherMachine','hasSeagull','hasRestaurant',
     'hasHarpoon','hull','krakensSlain','krakenGoneUntilDay',
+    'serpentsSlain','serpentGoneUntilDay','ghostsLooted',
     'seagullName','aquarium','time','day','rescued','treasures','bottles',
     'totalCaught','totalCooked','totalEarned','totalGold'];
   for(const k of keys){ if(d[k]!==undefined) W[k]=d[k]; }
   if(W.inv.krakeninkt===undefined) W.inv.krakeninkt=0;
+  if(W.inv.schub===undefined) W.inv.schub=0;
   if(!W.hull) W.hull=W.hullMax;
   W.questsDone = new Set(d.questsDone||[]);
   // rebuild the ship mesh for the saved hull
@@ -2217,6 +2475,7 @@ window.openHarbor=openHarbor; window.harborMarkers=harborMarkers; window.startCo
 window.cookGame=cookGame; window.cookHit=cookHit;
 window.camera=camera; window.camLook=camLook;
 window.kraken=kraken; window.fireHarpoon=fireHarpoon; window.beginKrakenFight=beginKrakenFight; window.krakenHit=krakenHit; window.KRAKEN_LAIR=KRAKEN_LAIR;
+window.serpent=serpent; window.serpentHit=serpentHit; window.ghost=ghost; window.lootGhost=lootGhost; window.nearbyGhost=nearbyGhost;
 
 // Restore a previous save (if any) and adjust the title screen accordingly
 if(hasSave()){
