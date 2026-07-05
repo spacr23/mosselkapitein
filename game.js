@@ -11,13 +11,15 @@ const W = {
   skills: { navigatie: 1, koken: 1, handel: 1, visserij: 1 },
   skillXp: { navigatie: 0, koken: 0, handel: 0, visserij: 0 },
   // inventory
-  inv: { mossel: 0, goudmossel: 0, exoot: 0 },
+  inv: { mossel: 0, goudmossel: 0, exoot: 0, krakeninkt: 0 },
   dishes: {}, // dishName -> count
   // ship & upgrades
   ship: 0,                 // index in SHIPS
   holdMax: 40,
   engineLvl: 1, harvestLvl: 1, sonarLvl: 1,
   hasWeatherMachine: false, hasSeagull: false, hasRestaurant: false,
+  hasHarpoon: false, hull: 100, hullMax: 100,   // harpoon + hull integrity for kraken fights
+  krakensSlain: 0, krakenGoneUntilDay: 0,       // boss progress
   seagullName: 'Pip',
   aquarium: [],            // exotic species names
   // run-time
@@ -569,6 +571,226 @@ for(let i=0;i<10;i++) spawnBottle();
 for(let i=0;i<7;i++) spawnSailor();
 for(let i=0;i<14;i++) spawnExotic();
 
+// ============================================================================
+//  5b. KRAKEN — the giant octopus boss (lurks in the misty deep)
+// ============================================================================
+const KRAKEN_LAIR = { x:-2150, z:-1500 };   // far in the misty mystery zone
+function buildTentacle(len, thick){
+  const root=new THREE.Group();
+  const segs=6, segLen=len/segs;
+  const mat=new THREE.MeshStandardMaterial({color:0x7b3fb0, roughness:.55, metalness:.05,
+    flatShading:true, emissive:0x2a0f4a, emissiveIntensity:.18});
+  let parent=root; const chain=[];
+  for(let i=0;i<segs;i++){
+    const t0=i/segs, t1=(i+1)/segs;
+    const r0=Math.max(thick*(1-t0*0.82),0.6), r1=Math.max(thick*(1-t1*0.82),0.4);
+    const pivot=new THREE.Group();
+    pivot.position.y = i===0?0:segLen;
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r0,segLen,7), mat);
+    m.position.y=segLen/2; m.castShadow=true; pivot.add(m);
+    // suckers on a couple of segments
+    if(i>0 && i<5){ for(const sy of [0.3,0.6]){ const s=new THREE.Mesh(new THREE.SphereGeometry(r1*0.4,6,6),
+      new THREE.MeshStandardMaterial({color:0xe6c9f5,roughness:.6})); s.position.set(0,segLen*sy,r0*0.7); pivot.add(s); } }
+    parent.add(pivot); parent=pivot; chain.push(pivot);
+  }
+  root.userData.segs=chain; root.userData.phase=Math.random()*6.28; root.userData.baseCurl=0.12+Math.random()*0.08;
+  return root;
+}
+const kraken = { group:new THREE.Group(), state:'lurking', hp:0, hpMax:120, surface:0,
+  x:KRAKEN_LAIR.x, z:KRAKEN_LAIR.z, attackTimer:3, lootDropped:false, tentacles:[], known:false, lash:0 };
+(function buildKraken(){
+  const g=kraken.group;
+  const bodyMat=new THREE.MeshStandardMaterial({color:0x7b3fb0, roughness:.5, metalness:.08,
+    flatShading:true, emissive:0x2a0f4a, emissiveIntensity:.2});
+  // mantle (head)
+  const mantle=new THREE.Mesh(new THREE.SphereGeometry(20,20,16), bodyMat);
+  mantle.scale.set(1,1.25,1.05); mantle.position.y=14; mantle.castShadow=true; g.add(mantle);
+  const hood=new THREE.Mesh(new THREE.ConeGeometry(15,20,14), bodyMat);
+  hood.position.y=30; g.add(hood);
+  // belly highlight
+  const belly=new THREE.Mesh(new THREE.SphereGeometry(14,16,12,0,Math.PI*2,0,Math.PI*0.6),
+    new THREE.MeshStandardMaterial({color:0xa56fd6,roughness:.6,flatShading:true}));
+  belly.position.set(0,10,7); belly.scale.set(1,1.1,0.6); g.add(belly);
+  // bioluminescent spots
+  for(let i=0;i<10;i++){ const a=Math.random()*6.28, rr=8+Math.random()*8;
+    const c=[0x43c6ff,0x5bd97a][i%2];
+    const sp=new THREE.Mesh(new THREE.SphereGeometry(0.9+Math.random(),8,8),
+      new THREE.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:.9,roughness:.4}));
+    sp.position.set(Math.cos(a)*rr,10+Math.random()*18,Math.sin(a)*rr*0.6+6); g.add(sp); }
+  // eyes (front = local +Z, toward the ship)
+  const eyeMat=new THREE.MeshStandardMaterial({color:0xffd34d,emissive:0xffb020,emissiveIntensity:1.2,roughness:.3});
+  const pupilMat=new THREE.MeshStandardMaterial({color:0x1a0f2a,roughness:.4});
+  kraken.eyes=[];
+  for(const ex of [-7,7]){ const eye=new THREE.Mesh(new THREE.SphereGeometry(4.2,14,14),eyeMat);
+    eye.position.set(ex,15,15.5); g.add(eye); kraken.eyes.push(eye);
+    const pup=new THREE.Mesh(new THREE.SphereGeometry(1.7,10,10),pupilMat); pup.position.set(ex,15,19); g.add(pup); }
+  // beak
+  const beak=new THREE.Mesh(new THREE.ConeGeometry(3,5,6),new THREE.MeshStandardMaterial({color:0x201020,roughness:.6}));
+  beak.position.set(0,4,10); beak.rotation.x=0.4; g.add(beak);
+  // 8 tentacles around the base
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2;
+    const tent=buildTentacle(34,4.4);
+    tent.position.set(Math.cos(a)*15,2,Math.sin(a)*15);
+    tent.rotation.y=a; tent.rotation.x=-0.35-Math.random()*0.2;
+    g.add(tent); kraken.tentacles.push(tent);
+  }
+  g.position.set(kraken.x,-60,kraken.z); g.visible=false;
+  scene.add(g);
+})();
+
+// ---- kraken combat ----
+const harpoons=[]; let harpoonCd=0;
+const harpoonGeo=new THREE.CylinderGeometry(0.18,0.05,7,6);
+const harpoonMat=new THREE.MeshStandardMaterial({color:0xcfd6de,metalness:.7,roughness:.3,emissive:0x223,emissiveIntensity:.2});
+
+function krakenActive(){ return kraken.state==='rising'||kraken.state==='fight'; }
+function refreshHarpoonBtn(){ const b=$('abHarpoon'); if(b) b.style.display=W.hasHarpoon?'flex':'none'; }
+function bossbarShow(v){ const b=$('bossbar'); if(b) b.style.display=v?'flex':'none'; }
+function bossbarUpdate(){
+  const hp=$('bossHp'); if(hp) hp.style.width=Math.max(0,kraken.hp/kraken.hpMax*100)+'%';
+  const hu=$('hullFill'); if(hu) hu.style.width=Math.max(0,W.hull/W.hullMax*100)+'%';
+}
+function flashDamage(){ const f=$('dmgFlash'); if(!f) return; f.style.transition='none'; f.style.opacity='.55';
+  requestAnimationFrame(()=>{ f.style.transition='opacity .5s'; f.style.opacity='0'; }); }
+
+function beginKrakenFight(){
+  kraken.state='rising'; kraken.known=true; kraken.lootDropped=false;
+  kraken.hpMax = 90 + W.level*12; kraken.hp=kraken.hpMax;
+  W.hull=W.hullMax; kraken.group.visible=true; kraken.attackTimer=3.2;
+  bossbarShow(true); bossbarUpdate();
+  toast('🦑 DE KRAKEN ONTWAAKT! Vuur je harpoen (🔱) en overleef!','bad');
+  beep(120,.4,0.05); setTimeout(()=>beep(90,.5,0.05),260); setTimeout(()=>beep(70,.6,0.05),560);
+}
+function fireHarpoon(){
+  if(!W.started||W.paused) return;
+  if(!W.hasHarpoon){ toast('🔱 Je hebt nog geen harpoen — koop er een op de Werf.','bad'); return; }
+  if(!krakenActive()){ toast('🔱 Geen doelwit in zicht. Zoek de Kraken in de mist.'); return; }
+  if(harpoonCd>0) return;
+  harpoonCd=0.6;
+  const sp=new THREE.Mesh(harpoonGeo,harpoonMat);
+  const sx=shipState.x, sz=shipState.z, sy=ship.position.y+2.5;
+  sp.position.set(sx,sy,sz);
+  const dx=kraken.x-sx, dz=kraken.z-sz, d=Math.hypot(dx,dz)||1;
+  sp.rotation.z=Math.PI/2; sp.rotation.y=Math.atan2(dx,dz);
+  scene.add(sp);
+  harpoons.push({mesh:sp, x:sx, z:sz, dx:dx/d, dz:dz/d, life:0});
+  beep(880,.05); setTimeout(()=>beep(520,.05),40);
+}
+function updateHarpoons(dt){
+  for(let i=harpoons.length-1;i>=0;i--){
+    const h=harpoons[i]; h.life+=dt;
+    h.x+=h.dx*150*dt; h.z+=h.dz*150*dt;
+    h.mesh.position.set(h.x, ship.position.y+2.5, h.z);
+    const hit = krakenActive() && dist2(h.x,h.z,kraken.x,kraken.z) < 22*22;
+    if(hit || h.life>2.2){
+      if(hit) krakenHit(11 + W.harvestLvl*2);
+      scene.remove(h.mesh); harpoons.splice(i,1);
+    }
+  }
+}
+function krakenHit(dmg){
+  if(!krakenActive()) return;
+  kraken.hp-=dmg; kraken.lash=0.25;
+  splash(kraken.x+(Math.random()-0.5)*24, kraken.z+(Math.random()-0.5)*24);
+  beep(300,.06); bossbarUpdate();
+  if(kraken.hp<=0) krakenDefeated();
+}
+function krakenAttack(){
+  const d=Math.hypot(shipState.x-kraken.x, shipState.z-kraken.z);
+  if(d<150){
+    kraken.lash=0.4;
+    damageHull(15+Math.floor(W.level*0.6));
+    // knock the ship away from the kraken
+    const nx=(shipState.x-kraken.x)/(d||1), nz=(shipState.z-kraken.z)/(d||1);
+    shipState.x+=nx*10; shipState.z+=nz*10; shipState.speed*=0.4;
+    splash(shipState.x,shipState.z); beep(140,.25,0.05);
+    if(W.inv.mossel>0 && Math.random()<0.5){ const steal=Math.min(3,W.inv.mossel); W.inv.mossel-=steal;
+      toast(`🦑 Een tentakel griste ${steal}× 🦪 mee!`,'bad'); }
+    if(W.hull<=0) krakenRepel();
+  }
+}
+function damageHull(n){ W.hull=Math.max(0,W.hull-n); flashDamage(); bossbarUpdate(); updateHUD(); }
+function krakenRepel(){
+  toast('🚨 De Kraken sloeg je terug! Je vlucht naar veiliger water.','bad');
+  const lost=Math.floor(holdCount()*0.12); if(lost>0){ let l=lost; const t=Math.min(l,W.inv.mossel); W.inv.mossel-=t; l-=t; if(l>0) W.inv.goudmossel=Math.max(0,W.inv.goudmossel-l); }
+  // shove the ship well clear of the lair
+  const nx=(shipState.x-kraken.x), nz=(shipState.z-kraken.z), d=Math.hypot(nx,nz)||1;
+  shipState.x=kraken.x+nx/d*700; shipState.z=kraken.z+nz/d*700; shipState.speed=0;
+  kraken.state='lurking'; kraken.hp=kraken.hpMax; W.hull=W.hullMax;
+  kraken.x=KRAKEN_LAIR.x; kraken.z=KRAKEN_LAIR.z; kraken.group.position.set(kraken.x,-60,kraken.z);
+  W.krakenGoneUntilDay=W.day+1; bossbarShow(false); updateHUD();
+}
+function krakenDefeated(){
+  kraken.state='dying'; kraken.lootDropped=false;
+  const ink=4+Math.floor(W.level/3); W.inv.krakeninkt+=ink;
+  const gold=1500+W.level*80; W.gold+=gold; W.totalEarned+=gold;
+  W.krakensSlain++; W.krakenGoneUntilDay=W.day+4;
+  toast(`🏆 KRAKEN VERSLAGEN! +${ink}× 🖋️ krakeninkt, +${gold} 🪙 en dikke roem!`,'gold');
+  gainXP(300); confettiBurst(kraken.x,kraken.z);
+  beep(523,.14); setTimeout(()=>beep(659,.14),150); setTimeout(()=>beep(784,.2),320); setTimeout(()=>beep(1047,.3),520);
+  bossbarShow(false); W.hull=W.hullMax; checkQuests(); updateHUD();
+  if(typeof saveGame==='function') saveGame();
+}
+function updateKraken(dt){
+  const t=oceanUniforms.uTime.value, sc=oceanUniforms.uWaveScale.value;
+  if(harpoonCd>0) harpoonCd-=dt;
+  updateHarpoons(dt);
+  // respawn after enough days have passed
+  if(kraken.state==='gone'){ if(W.day>=W.krakenGoneUntilDay){ kraken.state='lurking'; kraken.hp=kraken.hpMax;
+    kraken.x=KRAKEN_LAIR.x; kraken.z=KRAKEN_LAIR.z; kraken.group.position.set(kraken.x,-60,kraken.z); } return; }
+  // hull slowly self-repairs outside of a fight
+  if(kraken.state!=='fight' && W.hull<W.hullMax) W.hull=Math.min(W.hullMax, W.hull+dt*4);
+
+  if(kraken.state==='lurking'){
+    kraken.group.visible=false;
+    const near = dist2(shipState.x,shipState.z,kraken.x,kraken.z) < 250*250;
+    if(near) kraken.known=true;
+    if(near && W.started && !W.paused && W.day>=W.krakenGoneUntilDay) beginKrakenFight();
+    return;
+  }
+  kraken.group.visible=true;
+  kraken.group.position.x=kraken.x; kraken.group.position.z=kraken.z;
+  // face the ship
+  const ang=Math.atan2(shipState.x-kraken.x, shipState.z-kraken.z);
+  let ry=kraken.group.rotation.y;
+  let diff=((ang-ry+Math.PI)%(Math.PI*2))-Math.PI;
+  kraken.group.rotation.y = ry + diff*Math.min(1,dt*1.5);
+  // animate tentacles
+  if(kraken.lash>0) kraken.lash-=dt;
+  for(const tent of kraken.tentacles){ const segs=tent.userData.segs;
+    for(let i=0;i<segs.length;i++){ segs[i].rotation.x = tent.userData.baseCurl
+      + Math.sin(t*1.7+tent.userData.phase+i*0.7)*0.16
+      + (kraken.lash>0? Math.sin(t*10+i)*0.25*kraken.lash : 0); } }
+  // eye pulse
+  const ep=1.0+Math.sin(t*4)*0.5; for(const e of kraken.eyes) e.material.emissiveIntensity=ep;
+
+  const bob=waveHeight(kraken.x,kraken.z,t,sc);
+  if(kraken.state==='rising'){
+    kraken.surface=Math.min(1,kraken.surface+dt*0.6);
+    kraken.group.position.y=-55+kraken.surface*55+bob;
+    if(kraken.surface>=1){ kraken.state='fight'; kraken.attackTimer=2.4; }
+  } else if(kraken.state==='fight'){
+    kraken.group.position.y=bob;
+    // disengage if the player flees far away
+    if(dist2(shipState.x,shipState.z,kraken.x,kraken.z) > 620*620){
+      kraken.state='lurking'; kraken.hp=kraken.hpMax; W.hull=W.hullMax; bossbarShow(false);
+      kraken.x=KRAKEN_LAIR.x; kraken.z=KRAKEN_LAIR.z; kraken.group.position.set(kraken.x,-60,kraken.z);
+      toast('🌫️ De Kraken zakt terug in de diepte…'); return;
+    }
+    // pursue the ship so it can strike (player must keep moving)
+    const dxs=shipState.x-kraken.x, dzs=shipState.z-kraken.z, ds=Math.hypot(dxs,dzs)||1;
+    if(ds>70){ const spd=15; kraken.x+=dxs/ds*spd*dt; kraken.z+=dzs/ds*spd*dt; }
+    kraken.attackTimer-=dt;
+    if(kraken.attackTimer<=0){ krakenAttack(); kraken.attackTimer=3.2+Math.random()*1.4; }
+  } else if(kraken.state==='dying'){
+    kraken.surface=Math.max(0,kraken.surface-dt*0.5);
+    kraken.group.rotation.y+=dt*2.4;
+    kraken.group.position.y-=dt*14;
+    for(const e of kraken.eyes) e.material.emissiveIntensity*=0.94;
+    if(kraken.group.position.y<-70){ kraken.state='gone'; kraken.group.visible=false; }
+  }
+}
+
 // ---- seagull pet ----
 const seagull = new THREE.Group();
 (function buildGull(){
@@ -605,6 +827,7 @@ addEventListener('keydown',e=>{
   if(k==='m') toggleMap();
   if(k==='u') openHarbor(nearestHarbor(), 'upgrades'); // quick upgrades (only near harbor? allow anywhere for shop preview)
   if(k==='g') sendSeagull();
+  if(k==='h') fireHarpoon();
   if(k==='p') togglePause();
   if(k==='escape') closeModal();
 });
@@ -685,6 +908,7 @@ function setupTouch(){
   hold(catchBtn, ()=>{ keys[' ']=true; }, ()=>{ keys[' ']=false; });
   tap(document.getElementById('abSonar'), sonarPing);
   tap(document.getElementById('abAct'), tryInteract);
+  tap(document.getElementById('abHarpoon'), fireHarpoon);
   // util buttons
   tap(document.getElementById('ubMap'), toggleMap);
   tap(document.getElementById('ubUpg'), ()=>openHarbor(nearestHarbor(),'upgrades'));
@@ -916,6 +1140,8 @@ const QUESTS=[
   {id:'q6', t:'Vang een gouden mossel',        check:()=>W.inv.goudmossel+W.totalGold>=1, reward:300},
   {id:'q7', t:'Bereik kapitein-niveau 5',      check:()=>W.level>=5, reward:400},
   {id:'q8', t:'Koop een groter schip',         check:()=>W.ship>=1, reward:500},
+  {id:'q9', t:'Rust een harpoenkanon uit',     check:()=>W.hasHarpoon, reward:200},
+  {id:'q10',t:'Versla de Kraken',              check:()=>W.krakensSlain>=1, reward:1000},
 ];
 W.totalCaught=0; W.totalCooked=0; W.totalEarned=0; W.totalGold=0;
 function checkQuests(){
@@ -995,6 +1221,7 @@ function tabVerkoop(h){
   rows+=invRow('🦪 Mosselen', W.inv.mossel, mp, ()=>`window.__sell('mossel')`);
   rows+=invRow('🌟 Gouden mosselen', W.inv.goudmossel, mp*8, ()=>`window.__sell('goudmossel')`);
   rows+=invRow('🐠 Exotische dieren', W.inv.exoot, 60, ()=>`window.__sell('exoot')`,'(of doneer aan aquarium)');
+  rows+=invRow('🖋️ Krakeninkt', W.inv.krakeninkt, 220, ()=>`window.__sell('krakeninkt')`,'(zeldzame buit van de Kraken)');
   // dishes
   let dishRows='';
   for(const r of RECIPES){
@@ -1052,6 +1279,8 @@ function tabUpgrades(h){
       buy:()=>{ W.harvestLvl++; }},
     {k:'sonar', name:'📡 Sonar-uitbreiding', desc:`Bereik niveau ${W.sonarLvl} → ${W.sonarLvl+1}`, price:Math.round(200*Math.pow(1.6,W.sonarLvl-1)), can:W.sonarLvl<6,
       buy:()=>{ W.sonarLvl++; }},
+    {k:'harpoon', name:'🔱 Harpoenkanon', desc:W.hasHarpoon?'Gemonteerd ✓ (toets H / 🔱-knop)':'Verdedig je tegen de Kraken — vuur harpoenen af', price:1500, can:!W.hasHarpoon,
+      buy:()=>{ W.hasHarpoon=true; kraken.known=true; refreshHarpoonBtn(); toast('🔱 Harpoenkanon gemonteerd! De Kraken schuilt in de mistige diepte (west/noordwest).','gold'); }},
     {k:'weather', name:'🌦️ Weersmachine', desc:W.hasWeatherMachine?'Geïnstalleerd ✓':'Beïnvloed het weer beperkt', price:1200, can:!W.hasWeatherMachine,
       buy:()=>{ W.hasWeatherMachine=true; }},
     {k:'gull', name:'🐦 Meeuw (hulpdier)', desc:W.hasSeagull?`${W.seagullName} aan boord ✓`:'Vindt schatten & flessen (toets G)', price:700, can:!W.hasSeagull,
@@ -1100,7 +1329,7 @@ window.__close=closeModal;
 window.__tab=t=>{ curTab=t; renderHarbor(); };
 window.__sell=kind=>{
   if(W.inv[kind]<=0) return;
-  let price = kind==='goudmossel'? musselPrice(curHarbor)*8 : kind==='exoot'? 60 : musselPrice(curHarbor);
+  let price = kind==='goudmossel'? musselPrice(curHarbor)*8 : kind==='exoot'? 60 : kind==='krakeninkt'? 220 : musselPrice(curHarbor);
   W.inv[kind]--; W.gold+=price; W.totalEarned+=price; gainSkill('handel',1.2);
   beep(720,.05); renderHarbor(); updateHUD(); checkQuests();
 };
@@ -1138,7 +1367,8 @@ window.__buyWeatherFuel=()=>{ if(W.gold<120||!W.hasWeatherMachine)return; W.gold
 window.__upg=(k,price)=>{
   if(W.gold<price) return;
   const items={ hold:()=>W.holdMax+=30, engine:()=>W.engineLvl++, harvest:()=>W.harvestLvl++, sonar:()=>W.sonarLvl++,
-    weather:()=>W.hasWeatherMachine=true, gull:()=>{W.hasSeagull=true;seagull.visible=true;}, restaurant:()=>W.hasRestaurant=true };
+    weather:()=>W.hasWeatherMachine=true, gull:()=>{W.hasSeagull=true;seagull.visible=true;}, restaurant:()=>W.hasRestaurant=true,
+    harpoon:()=>{ W.hasHarpoon=true; kraken.known=true; refreshHarpoonBtn(); toast('🔱 Harpoenkanon gemonteerd! De Kraken schuilt in de mistige diepte (west/noordwest).','gold'); } };
   W.gold-=price; items[k]();
   toast('🔧 Upgrade gekocht!','good'); beep(660,.08);
   gainSkill('navigatie',1); renderHarbor(); updateHUD(); checkQuests();
@@ -1377,6 +1607,8 @@ function drawBigMap(){
   for(const i of islandMeshes) ctx.fillText(i.treasure&&!i.visited?'💰':'🏝️',sx(i.x),sy(i.z));
   ctx.font='20px sans-serif';
   for(const h of harborMarkers){ ctx.fillText(h.icon,sx(h.x),sy(h.z)); ctx.fillStyle='#9fc4dd'; ctx.font='10px sans-serif'; ctx.fillText(h.name,sx(h.x),sy(h.z)+14); ctx.font='20px sans-serif'; }
+  // kraken lair (once discovered)
+  if(kraken.known && kraken.state!=='gone'){ ctx.fillText('🦑',sx(kraken.x),sy(kraken.z)); ctx.fillStyle='#ff8ab0'; ctx.font='10px sans-serif'; ctx.fillText('Kraken',sx(kraken.x),sy(kraken.z)+14); ctx.font='20px sans-serif'; }
   // ship
   ctx.fillText('🚢',sx(shipState.x),sy(shipState.z));
 }
@@ -1407,6 +1639,7 @@ function drawSonar(){
   }
   for(const b of beds){ if(b.known||dist2(b.x,b.z,shipState.x,shipState.z)<(range*0.6)**2) blip(b.x,b.z, b.golden?'#ffd34d':'#5bd97a', b.golden?4:3); }
   for(const h of harborMarkers) blip(h.x,h.z,'#ff9d4d',4);
+  if(kraken.known && kraken.state!=='gone'){ const big=krakenActive(); blip(kraken.x,kraken.z, big?'#ff3355':'#b95fd0', big?(6+Math.sin(oceanUniforms.uTime.value*8)*2):4); }
   for(const i of islandMeshes) blip(i.x,i.z, i.treasure&&!i.visited?'#ffd34d':'#b98a52',3);
   for(const bt of bottles) blip(bt.x,bt.z,'#9affc8',2.5);
   for(const s of sailors) blip(s.x,s.z,'#ff6b6b',3);
@@ -1557,6 +1790,9 @@ function stepSim(dt){
 
   // ---- seagull ----
   updateSeagull(dt);
+
+  // ---- kraken boss ----
+  updateKraken(dt);
 
   // ---- POI bob ----
   for(const bt of bottles) bt.mesh.position.y=waveHeight(bt.x,bt.z,t,sc)+0.3;
@@ -1879,6 +2115,7 @@ function saveGame(){
       ship:W.ship, holdMax:W.holdMax,
       engineLvl:W.engineLvl, harvestLvl:W.harvestLvl, sonarLvl:W.sonarLvl,
       hasWeatherMachine:W.hasWeatherMachine, hasSeagull:W.hasSeagull, hasRestaurant:W.hasRestaurant,
+      hasHarpoon:W.hasHarpoon, hull:W.hull, krakensSlain:W.krakensSlain, krakenGoneUntilDay:W.krakenGoneUntilDay,
       seagullName:W.seagullName, aquarium:W.aquarium,
       time:W.time, day:W.day,
       questsDone:[...W.questsDone],
@@ -1899,13 +2136,18 @@ function loadGame(){
   // scalars & objects
   const keys=['gold','level','xp','xpNext','skills','skillXp','inv','dishes','ship','holdMax',
     'engineLvl','harvestLvl','sonarLvl','hasWeatherMachine','hasSeagull','hasRestaurant',
+    'hasHarpoon','hull','krakensSlain','krakenGoneUntilDay',
     'seagullName','aquarium','time','day','rescued','treasures','bottles',
     'totalCaught','totalCooked','totalEarned','totalGold'];
   for(const k of keys){ if(d[k]!==undefined) W[k]=d[k]; }
+  if(W.inv.krakeninkt===undefined) W.inv.krakeninkt=0;
+  if(!W.hull) W.hull=W.hullMax;
   W.questsDone = new Set(d.questsDone||[]);
   // rebuild the ship mesh for the saved hull
   buildShip();
   seagull.visible = !!W.hasSeagull;
+  if(W.hasHarpoon) kraken.known=true;
+  refreshHarpoonBtn();
   // restore island treasure state (visited chests are emptied)
   if(Array.isArray(d.islandsVisited)){
     islandMeshes.forEach((isl,idx)=>{
@@ -1974,6 +2216,7 @@ window.keys=keys; window.stepSim=stepSim; window.startHarvest=startHarvest; wind
 window.openHarbor=openHarbor; window.harborMarkers=harborMarkers; window.startCook=startCook; window.RECIPES=RECIPES;
 window.cookGame=cookGame; window.cookHit=cookHit;
 window.camera=camera; window.camLook=camLook;
+window.kraken=kraken; window.fireHarpoon=fireHarpoon; window.beginKrakenFight=beginKrakenFight; window.krakenHit=krakenHit; window.KRAKEN_LAIR=KRAKEN_LAIR;
 
 // Restore a previous save (if any) and adjust the title screen accordingly
 if(hasSave()){
