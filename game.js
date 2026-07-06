@@ -56,10 +56,10 @@ const WEATHERS = {
 
 // Wave parameters — MUST match the GLSL below.
 const WAVES = [
-  { dir:[ 0.8,  0.6], amp:0.55, len:34, speed:0.9 },
-  { dir:[-0.6,  0.8], amp:0.35, len:21, speed:1.2 },
-  { dir:[ 0.3, -0.9], amp:0.22, len:13, speed:1.6 },
-  { dir:[ 0.9,  0.2], amp:0.12, len:7.5,speed:2.4 },
+  { dir:[ 0.8,  0.6], amp:0.48, len:44, speed:0.8 },
+  { dir:[-0.6,  0.8], amp:0.30, len:27, speed:1.05 },
+  { dir:[ 0.3, -0.9], amp:0.18, len:16, speed:1.4 },
+  { dir:[ 0.9,  0.2], amp:0.10, len:9,  speed:2.0 },
 ];
 
 // ============================================================================
@@ -157,25 +157,28 @@ const OCEAN_SIZE = 6400;
 const OCEAN_SEG = IS_MOBILE ? 200 : 360;
 const oceanGeo = new THREE.PlaneGeometry(OCEAN_SIZE, OCEAN_SIZE, OCEAN_SEG, OCEAN_SEG);
 oceanGeo.rotateX(-Math.PI/2);
+const LAND_MAX = 20;   // island + harbour discs that tint the shallows (filled after world build)
 const oceanUniforms = {
   uTime:{value:0}, uWaveScale:{value:1.0},
   uSunDir:{value:new THREE.Vector3(0,1,0)}, uSunColor:{value:new THREE.Color(0xfff0c8)},
-  uDeep:{value:new THREE.Color(0x063a6e)}, uShallow:{value:new THREE.Color(0x37e0d6)},
+  uDeep:{value:new THREE.Color(0x05335e)}, uMid:{value:new THREE.Color(0x0e6493)},
+  uShallow:{value:new THREE.Color(0x2fd9c0)},
   uSky:{value:new THREE.Color(0xcdeBff)}, uNight:{value:0}, uSunStrength:{value:1.0},
+  uLand:{value:Array.from({length:LAND_MAX},()=>new THREE.Vector3(0,0,0))},
 };
 const oceanMat = new THREE.ShaderMaterial({
   uniforms: oceanUniforms,
   vertexShader:`
     uniform float uTime,uWaveScale; varying vec3 vN; varying vec3 vWorld; varying float vH; varying float vD;
-    // 4 big directional waves (match JS WAVES) + 2 fine detail waves for sparkle (visual only)
+    // 4 big directional swells (match JS WAVES) + 2 fine detail waves (visual only)
     vec2 D[6]; float A[6]; float L[6]; float S[6];
     void initw(){
-      D[0]=normalize(vec2(0.8,0.6));  A[0]=0.55; L[0]=34.0; S[0]=0.9;
-      D[1]=normalize(vec2(-0.6,0.8)); A[1]=0.35; L[1]=21.0; S[1]=1.2;
-      D[2]=normalize(vec2(0.3,-0.9)); A[2]=0.22; L[2]=13.0; S[2]=1.6;
-      D[3]=normalize(vec2(0.9,0.2));  A[3]=0.12; L[3]=7.5;  S[3]=2.4;
-      D[4]=normalize(vec2(-0.5,-0.7));A[4]=0.06; L[4]=4.4;  S[4]=3.1;
-      D[5]=normalize(vec2(0.65,-0.4));A[5]=0.04; L[5]=2.7;  S[5]=3.8;
+      D[0]=normalize(vec2(0.8,0.6));  A[0]=0.48; L[0]=44.0; S[0]=0.8;
+      D[1]=normalize(vec2(-0.6,0.8)); A[1]=0.30; L[1]=27.0; S[1]=1.05;
+      D[2]=normalize(vec2(0.3,-0.9)); A[2]=0.18; L[2]=16.0; S[2]=1.4;
+      D[3]=normalize(vec2(0.9,0.2));  A[3]=0.10; L[3]=9.0;  S[3]=2.0;
+      D[4]=normalize(vec2(-0.5,-0.7));A[4]=0.05; L[4]=5.2;  S[4]=2.6;
+      D[5]=normalize(vec2(0.65,-0.4));A[5]=0.035;L[5]=3.2;  S[5]=3.2;
     }
     void main(){
       initw();
@@ -197,33 +200,68 @@ const oceanMat = new THREE.ShaderMaterial({
   fragmentShader:`
     precision highp float;
     varying vec3 vN; varying vec3 vWorld; varying float vH; varying float vD;
-    uniform vec3 uSunDir,uSunColor,uDeep,uShallow,uSky; uniform float uNight,uSunStrength;
+    uniform vec3 uSunDir,uSunColor,uDeep,uMid,uShallow,uSky;
+    uniform float uNight,uSunStrength,uTime,uWaveScale;
+    uniform vec3 uLand[${LAND_MAX}];
+    // ---- cheap animated value noise for surface ripple detail ----
+    float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+    float vnoise(vec2 p){
+      vec2 i=floor(p), f=fract(p);
+      f=f*f*(3.0-2.0*f);
+      return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+                 mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y);
+    }
+    float ripple(vec2 p){
+      float v =vnoise(p*0.35 + vec2(uTime*0.55, uTime*0.30))*0.62;
+      v+=vnoise(p*0.95 - vec2(uTime*0.42,-uTime*0.66))*0.38;
+      return v;
+    }
     void main(){
-      vec3 N=normalize(vN);
       vec3 V=normalize(cameraPosition - vWorld);
       vec3 L=normalize(uSunDir);
+      // ---- detail normal from noise gradient, fading with distance ----
+      float att=1.0/(1.0+vD*0.0045);
+      float e=0.6;
+      float r0=ripple(vWorld.xz);
+      float rx=ripple(vWorld.xz+vec2(e,0.0));
+      float rz=ripple(vWorld.xz+vec2(0.0,e));
+      vec3 N=normalize(normalize(vN) + vec3((r0-rx)/e, 0.0, (r0-rz)/e)*0.55*att);
+      // ---- shallows: turquoise ring + breaking foam around land ----
+      float shal=0.0, shore=0.0;
+      for(int i=0;i<${LAND_MAX};i++){
+        float r=uLand[i].z; if(r<1.0) continue;
+        float d=distance(vWorld.xz, uLand[i].xy);
+        shal=max(shal, 1.0-smoothstep(r*0.85, r*2.6, d));
+        shore=max(shore, (1.0-smoothstep(r*0.95, r*1.45, d)));
+      }
+      // ---- base colour: deep -> mid by wave lift & noise, then to tropical shallow near land ----
+      float relH=vH/max(uWaveScale,0.7);
+      float lift=clamp(relH*0.5+0.5,0.0,1.0);
+      vec3 water=mix(uDeep, uMid, lift*0.7 + r0*0.25);
+      water=mix(water, uShallow, shal*0.85);
+      // subsurface glow through the top of swells
+      water += uShallow*0.07*max(vH,0.0)*(1.0-shal);
+      // ---- sky reflection (fresnel) ----
       float fres=pow(1.0-max(dot(N,V),0.0),4.0);
-      // depth-tinted base water colour
-      vec3 water=mix(uDeep,uShallow, clamp(vH*0.6+0.45,0.0,1.0));
-      // subsurface glow on the up-facing wave backs
-      water += uShallow*0.10*max(vH,0.0);
-      vec3 col=mix(water, uSky, fres*0.55);
+      vec3 col=mix(water, uSky, clamp(fres*0.75,0.0,0.8)*(1.0-shal*0.4));
       // soft diffuse
-      float diff=max(dot(N,L),0.0);
-      col += uSunColor*diff*0.16*uSunStrength;
-      // tight sun glitter + broader sheen
+      col += uSunColor*max(dot(N,L),0.0)*0.14*uSunStrength;
+      // ---- sun glitter: sharp sparkle over the ripple field + wide sheen ----
       vec3 H=normalize(L+V);
       float ndh=max(dot(N,H),0.0);
-      col += uSunColor*pow(ndh,220.0)*3.2*uSunStrength;     // sharp sparkle
-      col += uSunColor*pow(ndh,28.0)*0.35*uSunStrength;      // soft sheen
-      // crest foam
-      float foam=smoothstep(0.5,0.95,vH*1.35);
-      col=mix(col, vec3(0.95,0.99,1.0), foam*0.6);
-      // fade toward sky colour at the horizon for a softer, deeper look
+      col += uSunColor*pow(ndh,340.0)*4.5*uSunStrength;
+      col += uSunColor*pow(ndh,32.0)*0.30*uSunStrength;
+      // ---- foam: crests offshore + animated surf along shorelines ----
+      // height relative to the current sea state, so storms don't whitewash the surface
+      float crest=smoothstep(0.55,0.95,relH*1.3)*(0.35+0.65*r0);
+      float surf=shore*smoothstep(0.35,0.75, vnoise(vWorld.xz*0.5+vec2(uTime*0.8,0.0)) )*0.9;
+      float foam=clamp(crest*0.55+surf,0.0,1.0);
+      col=mix(col, vec3(0.94,0.98,1.0), foam);
+      // ---- horizon blend + night ----
       float horizon=clamp((vD-900.0)/2600.0,0.0,1.0);
-      col=mix(col, uSky*mix(1.0,0.5,uNight), horizon*0.6);
-      col*=mix(0.32,1.0,1.0-uNight*0.6);
-      gl_FragColor=vec4(col,0.94);
+      col=mix(col, uSky*mix(1.0,0.5,uNight), horizon*0.65);
+      col*=mix(0.30,1.0,1.0-uNight*0.6);
+      gl_FragColor=vec4(col,0.96);
     }`,
   transparent:true,
 });
@@ -542,6 +580,13 @@ for(const isl of ISLANDS){
   islandMeshes.push({...isl, group:g});
 }
 
+// feed island + harbour land discs to the water shader (turquoise shallows & surf)
+{
+  let li=0;
+  for(const isl of ISLANDS){ if(li<LAND_MAX) oceanUniforms.uLand.value[li++].set(isl.x, isl.z, isl.r); }
+  for(const c of harborCores){ if(li<LAND_MAX) oceanUniforms.uLand.value[li++].set(c.x, c.z, c.r); }
+}
+
 // ---- mussel beds (dynamic) ----
 const beds = [];
 const bedGeo = new THREE.IcosahedronGeometry(0.55,0);
@@ -762,10 +807,10 @@ function updateCaptainFigure(){
   const cap=shipMesh&&shipMesh.userData.captain;
   if(!cap) return;
   const targets=W.hasHarpoon?activeTargets():[];
-  if(!targets.length){ cap.visible=false; return; }
-  cap.visible=true;
-  let tg=targets[0], bd=Infinity;
+  let tg=null, bd=400*400;   // only man the deck when a monster is within ~400
   for(const t of targets){ const d=dist2(t.x,t.z,shipState.x,shipState.z); if(d<bd){bd=d; tg=t;} }
+  if(!tg){ cap.visible=false; return; }
+  cap.visible=true;
   // world angle to target, converted into ship-local yaw (rifle points along local +z)
   cap.rotation.y = Math.atan2(tg.x-shipState.x, tg.z-shipState.z) - shipState.heading;
 }
@@ -2344,8 +2389,10 @@ function applyEnvironment(dt){
   oceanUniforms.uSky.value.copy(bot);
   oceanUniforms.uNight.value=night;
   oceanUniforms.uSunStrength.value=wm.sun*(0.4+dayAmt);
-  const deep=new THREE.Color(0x0c4f8a).lerp(wt,(1-wm.sun)*0.3);
+  const deep=new THREE.Color(0x05335e).lerp(wt,(1-wm.sun)*0.3);
   oceanUniforms.uDeep.value.copy(deep);
+  const mid=new THREE.Color(0x0e6493).lerp(wt,(1-wm.sun)*0.35);
+  oceanUniforms.uMid.value.copy(mid);
 
   // fog
   const baseFog = wm.fog * (0.7+night*0.6);
