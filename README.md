@@ -99,6 +99,14 @@ besturing op het scherm:
   - **Het Spookschip** 👻: glijdt 's nachts doorschijnend over het water. Enter
     het (E / ⚓ Actie) voor spookgoud… maar pas op voor de **spookvloek** die je
     schip tijdelijk vertraagt.
+  - **De Reuzenkrab** 🦀: belegert om de paar dagen een haven — je krijgt alarm
+    en een 🦀-markering op de kaart. Vaar erheen en jaag hem weg; ontwijk zijn
+    klauwslagen. Buit: **krabbenscharen** (delicatesse).
+- **De kapitein vecht mee**: tijdens een monstergevecht stapt de kapitein
+  zichtbaar op het dek en richt zijn geweer op het doelwit, met mondingsvuur
+  bij elk schot.
+- **Zwaardere schepen = zwaardere wapens**: vuurkracht en rompsterkte groeien
+  per schips-tier (zichtbaar in de Schepen-tab op de werf).
 - **Zeekaart** (`M`) en **sonar-radar** voor navigatie.
 
 ## 🌍 Gratis online hosten
