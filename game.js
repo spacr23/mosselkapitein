@@ -2609,10 +2609,34 @@ function togglePause(){
       <div class="card2"><h3>🦪 Ruim</h3><p>${holdCount()}/${W.holdMax}</p></div>
       <div class="card2"><h3>🚢 Schip</h3><p>${SHIPS[W.ship].name}</p></div>
     </div>
-    <div style="text-align:center;margin-top:16px"><button class="btn" onclick="window.__resume()">▶️ Verder spelen</button></div>`);
+    <div style="text-align:center;margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button class="btn" onclick="window.__resume()">▶️ Verder spelen</button>
+      <button class="btn alt" onclick="window.__manual()">📖 Handleiding</button>
+      ${cloudEnabled()?'<button class="btn alt" onclick="window.__openCloud()">☁️ Cloud opslaan</button>':''}
+    </div>`);
   } else closeModal();
 }
 window.__resume=()=>{ W.paused=false; closeModal(); };
+
+// ---- Handleiding / manual (opened from the pause menu) ----
+function openManual(){
+  W.paused=true;
+  const key=(k)=> IS_TOUCH ? '' : `<kbd>${k}</kbd> `;
+  openModal(`<h2>📖 Handleiding</h2>
+    <div class="sub">Alles wat je moet weten om de beroemdste mosselkapitein ter wereld te worden.</div>
+    <div class="grid">
+      <div class="card2"><h3>🎯 Doel</h3><p>Vang mosselen op de banken (groene blips op de sonar), kook ze in de kombuis-minigame en verkoop je gerechten in havens. Verdien munten, level je vaardigheden, koop upgrades en betere schepen, en ontdek de geheimen van de zee.</p></div>
+      <div class="card2"><h3>🕹️ Besturing</h3><p>${IS_TOUCH
+        ? 'Vaar met de <b>joystick</b> (linksonder). <b>🦪 Vang</b> vasthouden bij een bank. <b>📡 Sonar</b> en <b>⚓ Actie</b> tikken. Knoppen rechtsboven: kaart 🗺️, werf 🔧, camera 📷, meeuw 🐦, pauze ⏸️. Sleep met een tweede vinger over het water om rond te kijken.'
+        : `${key('W')}${key('S')} gas/achteruit · ${key('A')}${key('D')} sturen · ${key('F')} sonar · ${key('Spatie')} vangen · ${key('E')} actie/aanmeren · ${key('H')} harpoen · ${key('C')} camera · ${key('M')} kaart · ${key('U')} werf · ${key('G')} meeuw · ${key('P')} pauze. Sleep met de muis om rond te kijken.`}</p></div>
+      <div class="card2"><h3>🦪 Vangen & koken</h3><p>Ping met de sonar om mosselbanken te vinden. Vaar erheen, houd <b>${IS_TOUCH?'🦪 Vang':'Spatie'}</b> vast tot je ruim vol is. Meer aan in een haven, open de <b>Kombuis</b> en kook met perfecte timing — hoe beter je timing, hoe waardevoller het gerecht.</p></div>
+      <div class="card2"><h3>🌊 De open zee</h3><p>Ontdek verborgen eilanden met schatten 🏴‍☠️, red gestrande zeelieden ⛑️, vang exotische dieren voor je aquarium 🐠, vind gouden mosselen 🌟 en flessenpost met missies 📜. Let op het weer en de dag-/nachtcyclus.</p></div>
+      <div class="card2" style="grid-column:1/-1"><h3>🐙 Zeemonsters</h3><p>Koop het <b>🔱 Harpoenkanon</b> op de werf. Dan kun je jagen op: de <b>🦑 Kraken</b> (mistige diepte), de <b>🐉 Zeeslang</b> (stormzone), het <b>👻 Spookschip</b> ('s nachts, enter met ${IS_TOUCH?'⚓ Actie':'E'}) en de <b>🦀 Reuzenkrab</b> die havens belegert. Grotere schepen hebben meer vuurkracht en een sterkere romp!</p></div>
+    </div>
+    <div style="text-align:center;margin-top:16px"><button class="btn" onclick="window.__backToPause()">◀ Terug</button></div>`);
+}
+window.__manual=openManual;
+window.__backToPause=()=>{ closeModal(); W.paused=false; togglePause(); };
 
 // ============================================================================
 //  21b. SAVE / LOAD  (localStorage — survives reloads & app restarts)
@@ -2620,35 +2644,39 @@ window.__resume=()=>{ W.paused=false; closeModal(); };
 const SAVE_KEY='mosselkapitein_save_v1';
 let loadedFromSave=false;
 
+function serializeSave(){
+  return { v:1,
+    gold:W.gold, level:W.level, xp:W.xp, xpNext:W.xpNext,
+    skills:W.skills, skillXp:W.skillXp,
+    inv:W.inv, dishes:W.dishes,
+    ship:W.ship, holdMax:W.holdMax,
+    engineLvl:W.engineLvl, harvestLvl:W.harvestLvl, sonarLvl:W.sonarLvl,
+    hasWeatherMachine:W.hasWeatherMachine, hasSeagull:W.hasSeagull, hasRestaurant:W.hasRestaurant,
+    hasHarpoon:W.hasHarpoon, hull:W.hull, krakensSlain:W.krakensSlain, krakenGoneUntilDay:W.krakenGoneUntilDay,
+    serpentsSlain:W.serpentsSlain, serpentGoneUntilDay:W.serpentGoneUntilDay, ghostsLooted:W.ghostsLooted,
+    crabsSlain:W.crabsSlain, crabNextDay:W.crabNextDay,
+    seagullName:W.seagullName, aquarium:W.aquarium,
+    time:W.time, day:W.day,
+    questsDone:[...W.questsDone],
+    rescued:W.rescued, treasures:W.treasures, bottles:W.bottles,
+    totalCaught:W.totalCaught, totalCooked:W.totalCooked, totalEarned:W.totalEarned, totalGold:W.totalGold,
+    islandsVisited: islandMeshes.map(i=>!!i.visited),
+    ship_x:shipState.x, ship_z:shipState.z, ship_h:shipState.heading,
+  };
+}
 function saveGame(){
   if(!W.started) return;
-  try{
-    const data={ v:1,
-      gold:W.gold, level:W.level, xp:W.xp, xpNext:W.xpNext,
-      skills:W.skills, skillXp:W.skillXp,
-      inv:W.inv, dishes:W.dishes,
-      ship:W.ship, holdMax:W.holdMax,
-      engineLvl:W.engineLvl, harvestLvl:W.harvestLvl, sonarLvl:W.sonarLvl,
-      hasWeatherMachine:W.hasWeatherMachine, hasSeagull:W.hasSeagull, hasRestaurant:W.hasRestaurant,
-      hasHarpoon:W.hasHarpoon, hull:W.hull, krakensSlain:W.krakensSlain, krakenGoneUntilDay:W.krakenGoneUntilDay,
-      serpentsSlain:W.serpentsSlain, serpentGoneUntilDay:W.serpentGoneUntilDay, ghostsLooted:W.ghostsLooted,
-      crabsSlain:W.crabsSlain, crabNextDay:W.crabNextDay,
-      seagullName:W.seagullName, aquarium:W.aquarium,
-      time:W.time, day:W.day,
-      questsDone:[...W.questsDone],
-      rescued:W.rescued, treasures:W.treasures, bottles:W.bottles,
-      totalCaught:W.totalCaught, totalCooked:W.totalCooked, totalEarned:W.totalEarned, totalGold:W.totalGold,
-      islandsVisited: islandMeshes.map(i=>!!i.visited),
-      ship_x:shipState.x, ship_z:shipState.z, ship_h:shipState.heading,
-    };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-  }catch(e){ /* private mode / quota — ignore */ }
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serializeSave())); }
+  catch(e){ /* private mode / quota — ignore */ }
 }
 
 function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
 
 function loadGame(){
   let d; try{ d=JSON.parse(localStorage.getItem(SAVE_KEY)); }catch(e){ return false; }
+  return applySave(d);
+}
+function applySave(d){
   if(!d || d.v!==1) return false;
   // scalars & objects
   const keys=['gold','level','xp','xpNext','skills','skillXp','inv','dishes','ship','holdMax',
@@ -2689,6 +2717,115 @@ function newGame(){
   location.reload();
 }
 window.__newGame=()=>{ if(confirm('Nieuw spel starten? Je huidige voortgang gaat verloren.')) newGame(); };
+
+// ============================================================================
+//  21c. CLOUD SAVE  (share a simple code, continue on any device)
+//   Backend = a free Supabase project. Only two public values live here; the
+//   database is reached through SECURITY DEFINER functions so a code is required
+//   for every read/write (no enumeration). See CLOUD-SETUP in the README.
+// ============================================================================
+const CLOUD = {
+  url:  'PLAK_HIER_JE_SUPABASE_URL',      // e.g. https://abcd1234.supabase.co
+  key:  'PLAK_HIER_JE_SUPABASE_ANON_KEY', // the public "anon" key
+};
+const CODE_KEY='mosselkapitein_cloudcode';
+function cloudEnabled(){ return CLOUD.url && !CLOUD.url.startsWith('PLAK') && CLOUD.key && !CLOUD.key.startsWith('PLAK'); }
+function cloudHeaders(){ return { 'apikey':CLOUD.key, 'Authorization':'Bearer '+CLOUD.key, 'Content-Type':'application/json' }; }
+
+// unambiguous code like  MK-7K3P-9WQ2  (no 0/O/1/I to avoid confusion)
+const CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function makeCode(){
+  let s=''; for(let i=0;i<8;i++){ s+=CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)]; if(i===3) s+='-'; }
+  return 'MK-'+s;
+}
+function normCode(c){ return (c||'').toUpperCase().replace(/[^A-Z0-9]/g,'').replace(/^MK/,''); }
+function savedCode(){ try{ return localStorage.getItem(CODE_KEY)||''; }catch(e){ return ''; } }
+
+async function cloudUpload(){
+  if(!cloudEnabled()) throw new Error('Cloud niet geconfigureerd');
+  let code = savedCode() || makeCode();
+  const res = await fetch(CLOUD.url+'/rest/v1/rpc/put_save', {
+    method:'POST', headers:cloudHeaders(),
+    body: JSON.stringify({ p_code: normCode(code), p_data: serializeSave() }),
+  });
+  if(!res.ok) throw new Error('Upload mislukt ('+res.status+')');
+  try{ localStorage.setItem(CODE_KEY, code); }catch(e){}
+  return code;
+}
+async function cloudDownload(code){
+  if(!cloudEnabled()) throw new Error('Cloud niet geconfigureerd');
+  const res = await fetch(CLOUD.url+'/rest/v1/rpc/get_save', {
+    method:'POST', headers:cloudHeaders(),
+    body: JSON.stringify({ p_code: normCode(code) }),
+  });
+  if(!res.ok) throw new Error('Ophalen mislukt ('+res.status+')');
+  const data = await res.json();
+  if(!data || !data.v){ throw new Error('Geen opgeslagen reis bij die code'); }
+  // apply, persist locally, remember the code, and drop into the game
+  applySave(data);
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(data)); localStorage.setItem(CODE_KEY, code); }catch(e){}
+  return true;
+}
+
+// ---- Cloud modal (opened from pause menu / title screen) ----
+function openCloud(){
+  const code = savedCode();
+  W.paused=true;
+  if(!cloudEnabled()){
+    openModal(`<h2>☁️ Cloud opslaan</h2>
+      <div class="sub">Cloud-opslag is nog niet geconfigureerd voor deze versie.</div>
+      <div style="text-align:center;margin-top:14px"><button class="btn" onclick="window.__resume()">Terug</button></div>`);
+    return;
+  }
+  openModal(`<h2>☁️ Cloud opslaan & laden</h2>
+    <div class="sub">Bewaar je reis in de cloud en ga verder op elk toestel — met één simpele code. Geen wachtwoord nodig.</div>
+    <div class="grid">
+      <div class="card2">
+        <h3>💾 Nu opslaan</h3>
+        <p>Zet je huidige voortgang online en krijg je code + deel-link.</p>
+        <button class="btn" id="cloudSaveBtn" onclick="window.__cloudSave()">☁️ Opslaan in cloud</button>
+        <div id="cloudCodeBox" style="margin-top:10px">${code?`Je code: <b class="price" style="letter-spacing:1px">${code}</b>`:''}</div>
+      </div>
+      <div class="card2">
+        <h3>📥 Laden met code</h3>
+        <p>Typ de code van een ander toestel om die reis hierheen te halen.</p>
+        <input id="cloudCodeIn" placeholder="MK-XXXX-XXXX" value="${code||''}"
+          style="width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font-family:inherit;font-size:15px;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">
+        <button class="btn alt" onclick="window.__cloudLoad()">📥 Laden</button>
+      </div>
+    </div>
+    <div id="cloudMsg" class="sub" style="margin-top:12px;min-height:18px"></div>
+    <div style="text-align:center;margin-top:6px"><button class="btn" onclick="window.__resume()">▶️ Verder spelen</button></div>`);
+}
+function cloudMsg(html,cls){ const m=$('cloudMsg'); if(m){ m.innerHTML=html; m.style.color=cls==='bad'?'var(--bad)':cls==='good'?'var(--good)':'var(--muted)'; } }
+window.__openCloud=openCloud;
+window.__cloudSave=async()=>{
+  const b=$('cloudSaveBtn'); if(b){ b.disabled=true; b.textContent='☁️ Bezig…'; }
+  cloudMsg('Opslaan…');
+  try{
+    const code=await cloudUpload();
+    const link=location.origin+location.pathname+'?code='+encodeURIComponent(code);
+    const box=$('cloudCodeBox'); if(box) box.innerHTML=`Je code: <b class="price" style="letter-spacing:1px;font-size:18px">${code}</b>`;
+    cloudMsg(`✅ Opgeslagen! Bewaar je code <b>${code}</b> of deel deze link:<br><span style="word-break:break-all;color:var(--accent)">${link}</span><br><button class="btn alt" style="margin-top:8px;padding:6px 12px" onclick="window.__cloudCopy('${link}')">🔗 Kopieer link</button>`,'good');
+    beep(660,.08); setTimeout(()=>beep(880,.1),90);
+  }catch(e){ cloudMsg('❌ '+e.message,'bad'); }
+  if(b){ b.disabled=false; b.textContent='☁️ Opslaan in cloud'; }
+};
+window.__cloudLoad=async()=>{
+  const inp=$('cloudCodeIn'); const code=inp?inp.value.trim():'';
+  if(!code){ cloudMsg('Vul eerst een code in.','bad'); return; }
+  cloudMsg('Ophalen…');
+  try{
+    await cloudDownload(code);
+    cloudMsg('✅ Reis geladen! Verder spelen…','good');
+    beep(720,.08);
+    setTimeout(()=>{ closeModal(); W.paused=false; if(!W.started){ startGame(); } updateHUD(); renderQuests(); checkQuests(); }, 700);
+  }catch(e){ cloudMsg('❌ '+e.message,'bad'); }
+};
+window.__cloudCopy=(txt)=>{ try{ navigator.clipboard.writeText(txt); cloudMsg('🔗 Link gekopieerd!','good'); }catch(e){} };
+
+// If the page is opened with ?code=..., offer to load that cloud save on the title screen
+function pendingCloudCode(){ const m=/[?&]code=([^&]+)/.exec(location.search); return m?decodeURIComponent(m[1]):''; }
 
 // Autosave: every few seconds while playing, and whenever the app is hidden/closed
 setInterval(()=>{ if(W.started && !W.paused) saveGame(); }, 5000);
@@ -2748,13 +2885,34 @@ if(hasSave()){
 }
 if(loadedFromSave){
   $('playBtn').textContent='⚓ Verder spelen';
-  const help=document.querySelector('#title .help');
-  if(help) help.insertAdjacentHTML('afterend',
-    `<button id="newGameBtn" style="margin-top:14px;background:none;border:none;color:var(--muted);
-      text-decoration:underline;font-size:13px;cursor:pointer;font-family:inherit">🆕 Nieuw spel beginnen</button>`);
-  const nb=$('newGameBtn'); if(nb) nb.addEventListener('click',window.__newGame);
+}
+// Cloud + new-game links under the title (cloud only if configured)
+{
+  const box=$('titleLinks');
+  if(box){
+    let links='<div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">';
+    if(cloudEnabled()) links+=`<button id="cloudTitleBtn" style="background:none;border:none;color:var(--accent);text-decoration:underline;font-size:13px;cursor:pointer;font-family:inherit;text-shadow:0 1px 5px rgba(0,0,0,.9)">☁️ Cloud opslaan / laden</button>`;
+    if(loadedFromSave) links+=`<button id="newGameBtn" style="background:none;border:none;color:#cfe0ef;text-decoration:underline;font-size:13px;cursor:pointer;font-family:inherit;text-shadow:0 1px 5px rgba(0,0,0,.9)">🆕 Nieuw spel beginnen</button>`;
+    links+='</div>';
+    box.innerHTML=links;
+    const nb=$('newGameBtn'); if(nb) nb.addEventListener('click',window.__newGame);
+    const cb=$('cloudTitleBtn'); if(cb) cb.addEventListener('click',()=>{ document.getElementById('title').classList.remove('hidden'); openCloud(); });
+  }
+}
+// Opened via a share link (?code=...)? Offer to load it right away.
+{
+  const pc=pendingCloudCode();
+  if(pc && cloudEnabled()){
+    $('loadNote').innerHTML=`☁️ Deel-link herkend — reis <b>${pc}</b> laden…`;
+    cloudDownload(pc).then(()=>{
+      $('playBtn').textContent='⚓ Verder spelen'; loadedFromSave=true;
+      $('loadNote').textContent='✅ Cloud-reis geladen — klik Verder spelen.';
+    }).catch(err=>{ $('loadNote').textContent='⚠️ Kon cloud-code niet laden: '+err.message; });
+  }
 }
 
-// Kick off loop
-$('loadNote').textContent= loadedFromSave ? '✅ Opgeslagen reis gevonden — klik Verder spelen.' : '✅ Klaar! Klik Uitvaren.';
+// Kick off loop  (leave the note alone when a share link is being loaded)
+if(!(pendingCloudCode() && cloudEnabled())){
+  $('loadNote').textContent = loadedFromSave ? '✅ Opgeslagen reis gevonden — klik Verder spelen.' : '✅ Klaar! Klik Uitvaren.';
+}
 requestAnimationFrame(update);
