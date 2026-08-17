@@ -81,7 +81,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, IS_MOBILE?1.5:2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.15;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -480,29 +480,34 @@ for(const h of HARBORS){
   const g = new THREE.Group();
   const R = h.r;
   const coreR = R*0.62;               // solid land radius
-  // ----- land mass -----
-  const land=new THREE.Mesh(new THREE.SphereGeometry(coreR,28,18,0,Math.PI*2,0,Math.PI*0.5),
-    new THREE.MeshStandardMaterial({color:0xc9b487, roughness:.95}));
-  land.scale.y=0.32; land.position.y=-1; land.receiveShadow=true; g.add(land);
-  const rim=new THREE.Mesh(new THREE.CylinderGeometry(coreR,coreR*1.04,2.2,28),
-    new THREE.MeshStandardMaterial({color:0x9a7d4e, roughness:1})); rim.position.y=0.2; g.add(rim);
-  // ----- village: ring of houses -----
-  const houseCols=[0xff6b6b,0x6fd0ff,0xffd34d,0x5bd97a,0xff9d4d,0xc88aff,0x4dd0e1];
+  // ----- land mass: gentle grassy mound with a sandy edge + stone quay -----
+  const land=new THREE.Mesh(new THREE.SphereGeometry(coreR,32,20,0,Math.PI*2,0,Math.PI*0.5),
+    new THREE.MeshStandardMaterial({color:0x5d7a44, roughness:.95}));
+  land.scale.y=0.22; land.position.y=-0.5; land.receiveShadow=true; g.add(land);
+  const beachRing=new THREE.Mesh(new THREE.CylinderGeometry(coreR*1.02,coreR*1.1,1.6,32),
+    new THREE.MeshStandardMaterial({color:0xbfae88, roughness:1})); beachRing.position.y=0; g.add(beachRing);
+  const quay=new THREE.Mesh(new THREE.CylinderGeometry(coreR*0.99,coreR*1.03,1.2,32),
+    new THREE.MeshStandardMaterial({color:0x7d7568, roughness:.9})); quay.position.y=1.1; quay.receiveShadow=true; g.add(quay);
+  // ----- village: ring of weathered fishing cottages -----
+  const houseCols=[0xa8574e,0x86776a,0xb9a06a,0x6d7f8a,0x8a6f56,0x9c8b74,0x746a5a];
+  const roofCols=[0x5a3f33,0x4a423b,0x6a4a35];
   const nHouses=6+Math.floor(R/12);
   for(let i=0;i<nHouses;i++){
     const ang=(i/nHouses)*Math.PI*2 + Math.random()*0.3;
     const rr=coreR*(0.25+Math.random()*0.5);
-    const wdt=4+Math.random()*3, hgt=3+Math.random()*4;
+    const wdt=4+Math.random()*3, hgt=3+Math.random()*3;
     const hh=new THREE.Mesh(new THREE.BoxGeometry(wdt,hgt,wdt),
-      new THREE.MeshStandardMaterial({color:houseCols[i%houseCols.length], roughness:.8}));
-    hh.position.set(Math.cos(ang)*rr, 1+hgt/2, Math.sin(ang)*rr); hh.castShadow=true; g.add(hh);
+      new THREE.MeshStandardMaterial({color:houseCols[i%houseCols.length], roughness:.85}));
+    hh.position.set(Math.cos(ang)*rr, 1.4+hgt/2, Math.sin(ang)*rr); hh.castShadow=true; g.add(hh);
     const roof=new THREE.Mesh(new THREE.ConeGeometry(wdt*0.85,2.6,4),
-      new THREE.MeshStandardMaterial({color:0x8a4a2a,roughness:.8}));
+      new THREE.MeshStandardMaterial({color:roofCols[i%roofCols.length],roughness:.85}));
     roof.position.set(hh.position.x,hh.position.y+hgt/2+1.3,hh.position.z); roof.rotation.y=Math.PI/4; g.add(roof);
+    // warm little window that reads at dusk
+    const win=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.9),
+      new THREE.MeshStandardMaterial({color:0xffdf9a,emissive:0xcc8830,emissiveIntensity:.7}));
+    win.position.set(hh.position.x+Math.cos(ang)*(wdt/2+0.02), hh.position.y, hh.position.z+Math.sin(ang)*(wdt/2+0.02));
+    win.rotation.y=-ang+Math.PI/2; g.add(win);
   }
-  // central market stall (a splash of colour)
-  const stall=new THREE.Mesh(new THREE.BoxGeometry(5,0.4,5),
-    new THREE.MeshStandardMaterial({color:0xff7bd0,roughness:.7})); stall.position.y=3.2; g.add(stall);
   // ----- lighthouse -----
   const lhAng=Math.PI*0.75;
   const lx=Math.cos(lhAng)*coreR*0.7, lz=Math.sin(lhAng)*coreR*0.7;
@@ -547,24 +552,77 @@ for(const h of HARBORS){
   harborCores.push({x:h.x, z:h.z, r:coreR});
 }
 
+// ---- realistic island terrain: noise-displaced dome with height-based colours ----
+function terrainNoise(x,z){ // small deterministic 2D noise
+  return Math.sin(x*0.7)*Math.cos(z*0.9)*0.5 + Math.sin(x*2.3+z*1.7)*0.3 + Math.sin(x*4.1-z*3.3)*0.2;
+}
+function makeIslandTerrain(r){
+  const geo=new THREE.SphereGeometry(r,36,22,0,Math.PI*2,0,Math.PI*0.5);
+  geo.scale(1,0.42,1);
+  const pos=geo.attributes.position;
+  const colors=new Float32Array(pos.count*3);
+  const sand=new THREE.Color(0xcdb98a), grass=new THREE.Color(0x4a7a3a),
+        forest=new THREE.Color(0x33582b), rock=new THREE.Color(0x6f675a);
+  const maxH=r*0.42;
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+    // ripple the coastline & slopes so it stops looking like a smooth ball
+    const n=terrainNoise(x*3/r, z*3/r);
+    const edge=1-Math.min(1, Math.sqrt(x*x+z*z)/r);      // 0 at coast, 1 at centre
+    pos.setX(i, x*(1+n*0.10*(1-edge)));
+    pos.setZ(i, z*(1+n*0.10*(1-edge)));
+    pos.setY(i, Math.max(-1.5, y*(1+n*0.35) ));
+    // colour by height with noisy banding: beach → grass → forest → rocky top
+    const h=pos.getY(i)/maxH + n*0.12;
+    const c=new THREE.Color();
+    if(h<0.14) c.copy(sand);
+    else if(h<0.30) c.copy(sand).lerp(grass,(h-0.14)/0.16);
+    else if(h<0.66) c.copy(grass).lerp(forest,(h-0.30)/0.36);
+    else c.copy(forest).lerp(rock,Math.min(1,(h-0.66)/0.3));
+    colors[i*3]=c.r; colors[i*3+1]=c.g; colors[i*3+2]=c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({vertexColors:true, roughness:.92, metalness:0}));
+}
+function makePalm(px,pz,py,scale=1){
+  const palm=new THREE.Group();
+  const lean=(Math.random()-0.5)*0.35;
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.35*scale,0.7*scale,9*scale,7),
+    new THREE.MeshStandardMaterial({color:0x7a5a34,roughness:.9}));
+  trunk.position.y=4.5*scale; trunk.rotation.z=lean; trunk.castShadow=true; palm.add(trunk);
+  // fronds: crossed, drooping planes read far better than a blob
+  const frondMat=new THREE.MeshStandardMaterial({color:0x2f6b33,roughness:.85,side:THREE.DoubleSide});
+  for(let f=0;f<6;f++){
+    const frond=new THREE.Mesh(new THREE.PlaneGeometry(6.5*scale,1.5*scale,5,1), frondMat);
+    const fp=frond.geometry.attributes.position;
+    for(let vi=0;vi<fp.count;vi++){ const fx=fp.getX(vi); fp.setY(vi, fp.getY(vi)-Math.pow(Math.abs(fx)/(3.25*scale),2)*2.2*scale); }
+    frond.geometry.computeVertexNormals();
+    frond.position.set(Math.sin(lean)*9*scale*0.5, 9*scale, 0);
+    frond.rotation.y=(f/6)*Math.PI*2; frond.rotation.z=lean*0.5;
+    palm.add(frond);
+  }
+  palm.position.set(px,py,pz);
+  return palm;
+}
 // build islands
 for(const isl of ISLANDS){
   const g=new THREE.Group();
-  const sand=new THREE.Mesh(new THREE.SphereGeometry(isl.r,24,16,0,Math.PI*2,0,Math.PI*0.5),
-    new THREE.MeshStandardMaterial({color:0xf0dca0,roughness:.95}));
-  sand.scale.y=0.35; sand.position.y=-2; sand.receiveShadow=true; g.add(sand);
-  const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(isl.r*0.45,0),
-    new THREE.MeshStandardMaterial({color:0x7a6a52,roughness:1, flatShading:true}));
-  rock.position.y=isl.r*0.15; rock.castShadow=true; g.add(rock);
-  // palms
-  for(let i=0;i<4;i++){
-    const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.8,10,6),
-      new THREE.MeshStandardMaterial({color:0x8a5a2a}));
-    const a=Math.random()*6.28, rr=isl.r*0.5;
-    trunk.position.set(Math.cos(a)*rr,5,Math.sin(a)*rr); trunk.rotation.z=(Math.random()-0.5)*0.3; trunk.castShadow=true; g.add(trunk);
-    const leaves=new THREE.Mesh(new THREE.SphereGeometry(3.4,8,6),
-      new THREE.MeshStandardMaterial({color:0x3aa34a,roughness:.8,flatShading:true}));
-    leaves.position.set(trunk.position.x,10,trunk.position.z); leaves.scale.y=0.6; g.add(leaves);
+  const terrain=makeIslandTerrain(isl.r);
+  terrain.position.y=-1.5; terrain.receiveShadow=true; terrain.castShadow=true; g.add(terrain);
+  // scattered boulders along the coast
+  for(let i=0;i<5;i++){
+    const a=Math.random()*6.28, rr=isl.r*(0.75+Math.random()*0.2);
+    const boulder=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5+Math.random()*2.5,0),
+      new THREE.MeshStandardMaterial({color:0x6b6257,roughness:1,flatShading:true}));
+    boulder.position.set(Math.cos(a)*rr, 0.4, Math.sin(a)*rr);
+    boulder.rotation.set(Math.random()*3,Math.random()*3,0); boulder.castShadow=true; g.add(boulder);
+  }
+  // palms on the mid slopes
+  const nPalms=3+Math.floor(isl.r/16);
+  for(let i=0;i<nPalms;i++){
+    const a=Math.random()*6.28, rr=isl.r*(0.3+Math.random()*0.3);
+    g.add(makePalm(Math.cos(a)*rr, Math.sin(a)*rr, isl.r*0.16, 0.8+Math.random()*0.5));
   }
   if(isl.treasure){
     const chest=new THREE.Mesh(new THREE.BoxGeometry(3,2,2),
@@ -578,6 +636,34 @@ for(const isl of ISLANDS){
   g.position.set(isl.x,0,isl.z);
   poiGroup.add(g);
   islandMeshes.push({...isl, group:g});
+}
+
+// ---- ambient gulls circling islands & harbours (life in the world) ----
+const ambientGulls=[];
+{
+  const gullMat=new THREE.MeshStandardMaterial({color:0xf2f4f6,roughness:.8});
+  const spots=[...ISLANDS, ...HARBORS].filter((_,i)=>i%2===0);   // half the spots, keeps it light
+  for(const s of spots){
+    for(let i=0;i<2;i++){
+      const b=new THREE.Group();
+      const body=new THREE.Mesh(new THREE.SphereGeometry(0.5,6,5),gullMat); body.scale.z=1.6; b.add(body);
+      const wL=new THREE.Mesh(new THREE.PlaneGeometry(2.4,0.7),gullMat); wL.position.x=-1.2; b.add(wL);
+      const wR=new THREE.Mesh(new THREE.PlaneGeometry(2.4,0.7),gullMat); wR.position.x=1.2; b.add(wR);
+      scene.add(b);
+      ambientGulls.push({obj:b, cx:s.x, cz:s.z, r:(s.r||40)*0.9+8+Math.random()*14,
+        h:22+Math.random()*14, a:Math.random()*6.28, spd:0.25+Math.random()*0.2, wL, wR, ph:Math.random()*6.28});
+    }
+  }
+}
+function updateAmbientGulls(dt,t){
+  for(const gl of ambientGulls){
+    gl.a+=gl.spd*dt;
+    const x=gl.cx+Math.cos(gl.a)*gl.r, z=gl.cz+Math.sin(gl.a)*gl.r;
+    gl.obj.position.set(x, gl.h+Math.sin(t*0.7+gl.ph)*2, z);
+    gl.obj.rotation.y=-gl.a;                       // face along the circle
+    const flap=Math.sin(t*7+gl.ph)*0.55;
+    gl.wL.rotation.z=flap; gl.wR.rotation.z=-flap;
+  }
 }
 
 // feed island + harbour land discs to the water shader (turquoise shallows & surf)
@@ -2232,38 +2318,44 @@ function stepSim(dt){
   const wm=WEATHERS[W.weather];
   let accel = (keys['w']||keys['arrowup'])?1 : (keys['s']||keys['arrowdown'])?-0.5 : 0;
   if(touchCtrl.active && touchCtrl.throttle!==0) accel = touchCtrl.throttle; // analog joystick overrides
-  shipState.throttle += (accel-shipState.throttle)*Math.min(1,dt*2);
+  shipState.throttle += (accel-shipState.throttle)*Math.min(1,dt*2.8);
   let maxSpeed = 36 * spec.speed * (1 + (W.engineLvl-1)*0.32) * (1+(W.skills.navigatie-1)*0.06);
   if(W.buffs.snelheid) maxSpeed*=1.6;
   if(W.buffs.spookvloek) maxSpeed*=0.6;   // ghost-ship curse until it wears off
   // weather drag
   maxSpeed *= (W.weather==='storm'?0.7 : W.weather==='rain'?0.88 : 1);
-  shipState.speed += (shipState.throttle*maxSpeed - shipState.speed)*Math.min(1,dt*1.4);
+  shipState.speed += (shipState.throttle*maxSpeed - shipState.speed)*Math.min(1,dt*1.9);
   let turn=0;
   if(keys['a']||keys['arrowleft']) turn+=1;
   if(keys['d']||keys['arrowright']) turn-=1;
   if(touchCtrl.active) turn += touchCtrl.turn;
   turn=Math.max(-1,Math.min(1,turn));
-  const turnRate = 1.25*(0.42+0.58*Math.min(1,Math.abs(shipState.speed)/12));
+  const turnRate = 1.3*(0.6+0.4*Math.min(1,Math.abs(shipState.speed)/12));  // decent rudder even at low speed
   shipState.heading += turn*turnRate*dt * (shipState.speed<0?-1:1);
-  // wind nudge
-  shipState.x += (Math.sin(shipState.heading)*shipState.speed + W.wind.x* (wm.wave))*dt;
-  shipState.z += (Math.cos(shipState.heading)*shipState.speed + W.wind.y* (wm.wave))*dt;
+  // wind nudge (gentle, and only when actually sailing so docking stays calm)
+  const windAmt = wm.wave*0.35*Math.min(1, Math.abs(shipState.speed)/6);
+  shipState.x += (Math.sin(shipState.heading)*shipState.speed + W.wind.x*windAmt)*dt;
+  shipState.z += (Math.cos(shipState.heading)*shipState.speed + W.wind.y*windAmt)*dt;
   // clamp to world
   const lim=2900;
   shipState.x=Math.max(-lim,Math.min(lim,shipState.x));
   shipState.z=Math.max(-lim,Math.min(lim,shipState.z));
 
-  // ---- island & harbour-land collision: push the hull back to the edge ----
+  // ---- island & harbour-land collision: slide along the shore, never get stuck ----
   const pushOut=(cx,cz,minD)=>{
     const dx=shipState.x-cx, dz=shipState.z-cz;
     const d=Math.hypot(dx,dz);
     if(d<minD && d>0.001){
       const nx=dx/d, nz=dz/d;
-      shipState.x=cx+nx*minD;           // slide out along the radial normal
+      shipState.x=cx+nx*minD;                     // keep the hull on the waterline
       shipState.z=cz+nz*minD;
-      shipState.speed*=0.25;            // bump kills most forward momentum
-      shipState.throttle*=0.25;
+      // damp only the inward part of the motion; tangential glide survives,
+      // so steering away or along the coast immediately works
+      const hx=Math.sin(shipState.heading), hz=Math.cos(shipState.heading);
+      const inward = -(hx*nx + hz*nz) * Math.sign(shipState.speed||1); // >0 when pushing into land
+      if(inward>0){
+        shipState.speed *= Math.max(0.35, 1 - inward*0.8);
+      }
     }
   };
   for(const isl of islandMeshes) pushOut(isl.x, isl.z, isl.r+6);     // beach edge + hull margin
@@ -2297,6 +2389,7 @@ function stepSim(dt){
 
   // ---- seagull ----
   updateSeagull(dt);
+  updateAmbientGulls(dt, t);
 
   // ---- monsters ----
   updateKraken(dt);
