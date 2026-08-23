@@ -1443,7 +1443,7 @@ function setupLook(){
 }
 
 // ---------- TOUCH CONTROLS ----------
-const touchCtrl = { active:false, throttle:0, turn:0 };
+const touchCtrl = { active:false, throttle:0, turn:0, boost:false };
 function setupTouch(){
   // virtual joystick
   const joy=document.getElementById('joy'), knob=document.getElementById('joyKnob');
@@ -1483,6 +1483,8 @@ function setupTouch(){
   const tap=(el,fn)=> el.addEventListener('pointerdown',e=>{ e.preventDefault(); fn(); });
   // catch = hold space behaviour
   hold(catchBtn, ()=>{ keys[' ']=true; }, ()=>{ keys[' ']=false; });
+  const boostBtn=document.getElementById('abBoost');
+  if(boostBtn) hold(boostBtn, ()=>{ touchCtrl.boost=true; }, ()=>{ touchCtrl.boost=false; });
   tap(document.getElementById('abSonar'), sonarPing);
   tap(document.getElementById('abAct'), tryInteract);
   tap(document.getElementById('abHarpoon'), fireHarpoon);
@@ -2165,41 +2167,100 @@ let mapOpen=false;
 function toggleMap(){ mapOpen?closeMap():openMap(); }
 function openMap(){
   mapOpen=true; W.paused=true;
+  const chip=(c,label,shape='●')=>`<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px"><span style="color:${c};font-size:14px;line-height:1">${shape}</span>${label}</span>`;
   openModal(`<button class="closeX" onclick="window.__closemap()">✕</button>
-    <h2>🗺️ Zeekaart</h2><div class="sub">De grote oceaan en haar biomes. Jouw schip = 🚢.</div>
-    <canvas id="bigmap" width="700" height="500" style="width:100%;border-radius:12px;border:1px solid var(--line)"></canvas>
-    <div class="sub" style="margin-top:10px">🏘️ haven · 🏝️ eiland · 🦪 bekende bank · 📜 fles · ⛑️ zeeman</div>`);
+    <h2>Zeekaart</h2><div class="sub">De grote oceaan en haar vier zeeën. De witte pijl is jouw schip en koers.</div>
+    <canvas id="bigmap" width="720" height="720" style="width:100%;max-height:62vh;border-radius:12px;border:1px solid var(--line);background:#062640"></canvas>
+    <div class="sub" style="margin-top:10px;display:flex;flex-wrap:wrap;row-gap:4px">
+      ${chip('#ff9d4d','haven','■')}${chip('#8fcf7a','eiland')}${chip('#ffd34d','schat','★')}${chip('#5bd97a','mosselbank','·')}${chip('#ffd34d','gouden bank','·')}
+      ${chip('#9affc8','flessenpost','▲')}${chip('#ff6b6b','zeeman','✚')}${chip('#ff5a7a','monster','◆')}
+    </div>`);
   drawBigMap();
 }
 window.__closemap=()=>{ mapOpen=false; closeModal(); W.paused=false; };
 function closeMap(){ window.__closemap(); }
 function drawBigMap(){
   const cv=$('bigmap'); if(!cv) return; const ctx=cv.getContext('2d');
-  const R=3000; const sx=v=>(v/R*0.5+0.5)*cv.width, sy=v=>(v/R*0.5+0.5)*cv.height;
-  // biome backdrop
-  const grad=ctx.createLinearGradient(0,0,cv.width,cv.height);
-  grad.addColorStop(0,'#0a3a63'); grad.addColorStop(1,'#072438'); ctx.fillStyle=grad; ctx.fillRect(0,0,cv.width,cv.height);
-  // biome tints (match biomeAt thresholds)
-  ctx.globalAlpha=.18;
-  ctx.fillStyle='#6b7a8a'; ctx.fillRect(0,0,cv.width,sy(-850));              // storm north
-  ctx.fillStyle='#5bd97a'; ctx.fillRect(sx(1000),0,cv.width-sx(1000),cv.height); // tropical east
-  ctx.fillStyle='#b9c6cf'; ctx.fillRect(0,0,sx(-1000),cv.height);           // misty west
+  const Wc=cv.width, Hc=cv.height;
+  // uniform scale (the world is square, so the map must be too)
+  const R=3000, S=Math.min(Wc,Hc)/(2*R), ox=Wc/2, oy=Hc/2;
+  const sx=v=>ox+v*S, sy=v=>oy+v*S;
+  ctx.clearRect(0,0,Wc,Hc);
+
+  // ---- sea: deep gradient + biome tints (match biomeAt thresholds) ----
+  const grad=ctx.createRadialGradient(ox,oy,40,ox,oy,Wc*0.75);
+  grad.addColorStop(0,'#0e4a78'); grad.addColorStop(1,'#062640');
+  ctx.fillStyle=grad; ctx.fillRect(0,0,Wc,Hc);
+  ctx.globalAlpha=.16;
+  ctx.fillStyle='#8fa3b3'; ctx.fillRect(0,0,Wc,sy(-850));                  // stormy north
+  ctx.fillStyle='#3fd9a8'; ctx.fillRect(sx(1000),0,Wc-sx(1000),Hc);        // tropical east
+  ctx.fillStyle='#c9d4dc'; ctx.fillRect(0,0,sx(-1000),Hc);                 // misty west
   ctx.globalAlpha=1;
-  ctx.font='16px sans-serif'; ctx.textAlign='center';
-  for(const b of beds){ if(b.known){ ctx.fillText(b.golden?'🌟':'🦪',sx(b.x),sy(b.z)); } }
-  for(const bt of bottles) ctx.fillText('📜',sx(bt.x),sy(bt.z));
-  for(const s of sailors) ctx.fillText('⛑️',sx(s.x),sy(s.z));
-  for(const i of islandMeshes) ctx.fillText(i.treasure&&!i.visited?'💰':'🏝️',sx(i.x),sy(i.z));
-  ctx.font='20px sans-serif';
-  for(const h of harborMarkers){ ctx.fillText(h.icon,sx(h.x),sy(h.z)); ctx.fillStyle='#9fc4dd'; ctx.font='10px sans-serif'; ctx.fillText(h.name,sx(h.x),sy(h.z)+14); ctx.font='20px sans-serif'; }
-  // kraken lair (once discovered)
-  if(kraken.known && kraken.state!=='gone'){ ctx.fillText('🦑',sx(kraken.x),sy(kraken.z)); ctx.fillStyle='#ff8ab0'; ctx.font='10px sans-serif'; ctx.fillText('Kraken',sx(kraken.x),sy(kraken.z)+14); ctx.font='20px sans-serif'; }
-  // sea serpent (once spotted)
-  if(serpent.known && serpent.state!=='gone'){ ctx.fillText('🐉',sx(serpent.x),sy(serpent.z)); ctx.fillStyle='#7fe8c0'; ctx.font='10px sans-serif'; ctx.fillText('Zeeslang',sx(serpent.x),sy(serpent.z)+14); ctx.font='20px sans-serif'; }
-  // crab siege alarm
-  if(crabActive()){ ctx.fillText('🦀',sx(crab.x),sy(crab.z)); ctx.fillStyle='#ff9d6a'; ctx.font='10px sans-serif'; ctx.fillText('AANVAL!',sx(crab.x),sy(crab.z)+14); ctx.font='20px sans-serif'; }
-  // ship
-  ctx.fillText('🚢',sx(shipState.x),sy(shipState.z));
+  // subtle grid
+  ctx.strokeStyle='rgba(160,210,255,.10)'; ctx.lineWidth=1;
+  for(let v=-3000; v<=3000; v+=500){ ctx.beginPath(); ctx.moveTo(sx(v),sy(-3000)); ctx.lineTo(sx(v),sy(3000)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(-3000),sy(v)); ctx.lineTo(sx(3000),sy(v)); ctx.stroke(); }
+  // sea labels
+  ctx.fillStyle='rgba(200,225,245,.45)'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('STORMACHTIGE NOORDZEE', ox, sy(-2600));
+  ctx.fillText('MISTIGE ZONE', sx(-2000), sy(2600));
+  ctx.fillText('TROPISCHE WATEREN', sx(2000), sy(2600));
+
+  const label=(txt,x,y,col='#e6f2ff',size=11)=>{
+    ctx.font=`${size}px sans-serif`; ctx.textAlign='center';
+    ctx.lineWidth=3; ctx.strokeStyle='rgba(0,0,0,.75)'; ctx.strokeText(txt,x,y);
+    ctx.fillStyle=col; ctx.fillText(txt,x,y);
+  };
+  const dot=(x,y,r,col)=>{ ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.fill(); };
+
+  // ---- land: islands (green disc + sand rim) and harbours (sand disc + orange square) ----
+  for(const i of islandMeshes){
+    const x=sx(i.x), y=sy(i.z), r=Math.max(5, i.r*S*1.4);
+    dot(x,y,r+2,'#cdb98a'); dot(x,y,r,'#5f8a47');
+    if(i.treasure&&!i.visited){ // star for unclaimed treasure
+      ctx.fillStyle='#ffd34d'; ctx.beginPath();
+      for(let k=0;k<10;k++){ const a=-Math.PI/2+k*Math.PI/5, rr=k%2?3:7; ctx.lineTo(x+Math.cos(a)*rr, y+Math.sin(a)*rr); }
+      ctx.closePath(); ctx.fill();
+    }
+    label(i.name, x, y+r+12, '#cfe3cf', 10);
+  }
+  for(const h of harborMarkers){
+    const x=sx(h.x), y=sy(h.z), r=Math.max(6,(h.r||40)*0.62*S*1.4);
+    dot(x,y,r+2,'#cdb98a'); dot(x,y,r,'#6e7f62');
+    ctx.fillStyle='#ff9d4d'; ctx.fillRect(x-4,y-4,8,8);
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.strokeRect(x-4,y-4,8,8);
+    label(h.name, x, y+r+13, '#ffe2c2', 11);
+  }
+
+  // ---- points of interest ----
+  for(const b of beds){ if(b.known) dot(sx(b.x),sy(b.z), b.golden?3.5:2.5, b.golden?'#ffd34d':'#5bd97a'); }
+  for(const bt of bottles){ const x=sx(bt.x), y=sy(bt.z); ctx.fillStyle='#9affc8'; ctx.beginPath(); ctx.moveTo(x,y-5); ctx.lineTo(x+4,y+3); ctx.lineTo(x-4,y+3); ctx.closePath(); ctx.fill(); }
+  for(const s of sailors){ const x=sx(s.x), y=sy(s.z); ctx.strokeStyle='#ff6b6b'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(x-5,y); ctx.lineTo(x+5,y); ctx.moveTo(x,y-5); ctx.lineTo(x,y+5); ctx.stroke(); }
+
+  // ---- monsters (diamond markers) ----
+  const diamond=(x,y,col,name)=>{ ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(x,y-7); ctx.lineTo(x+7,y); ctx.lineTo(x,y+7); ctx.lineTo(x-7,y); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke(); label(name,x,y+18,col,10); };
+  if(kraken.known && kraken.state!=='gone') diamond(sx(kraken.x),sy(kraken.z),'#d56bff','Kraken');
+  if(serpent.known && serpent.state!=='gone') diamond(sx(serpent.x),sy(serpent.z),'#7fe8c0','Zeeslang');
+  if(crabActive()) diamond(sx(crab.x),sy(crab.z),'#ff7a3d','Reuzenkrab — AANVAL!');
+  if(ghost.state==='sailing' && ghost.fade>0.3) diamond(sx(ghost.x),sy(ghost.z),'#baffdf','Spookschip');
+
+  // ---- the ship: white arrow pointing along the heading ----
+  {
+    const x=sx(shipState.x), y=sy(shipState.z), a=shipState.heading;
+    // world forward is (sin a, cos a); on the map +z is down, so arrow dir = (sin a, cos a)
+    const fx=Math.sin(a), fy=Math.cos(a);
+    ctx.save(); ctx.translate(x,y);
+    ctx.fillStyle='rgba(255,255,255,.25)'; ctx.beginPath(); ctx.arc(0,0,11,0,6.283); ctx.fill();
+    ctx.fillStyle='#ffffff'; ctx.strokeStyle='#0b2a44'; ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(fx*10, fy*10);                       // tip
+    ctx.lineTo(-fx*6 - fy*6, -fy*6 + fx*6);         // rear-left
+    ctx.lineTo(-fx*3, -fy*3);                       // notch
+    ctx.lineTo(-fx*6 + fy*6, -fy*6 - fx*6);         // rear-right
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
 }
 
 // ============================================================================
@@ -2324,6 +2385,9 @@ function stepSim(dt){
   let maxSpeed = 36 * spec.speed * (1 + (W.engineLvl-1)*0.32) * (1+(W.skills.navigatie-1)*0.06);
   if(W.buffs.snelheid) maxSpeed*=1.6;
   if(W.buffs.spookvloek) maxSpeed*=0.6;   // ghost-ship curse until it wears off
+  // boost: hold Shift (or the ⚡ button) for a burst of speed
+  const boosting = !!(keys['shift'] || touchCtrl.boost) && shipState.throttle>0.2;
+  if(boosting) maxSpeed*=1.55;
   // weather drag
   maxSpeed *= (W.weather==='storm'?0.7 : W.weather==='rain'?0.88 : 1);
   shipState.speed += (shipState.throttle*maxSpeed - shipState.speed)*Math.min(1,dt*1.9);
@@ -2721,8 +2785,8 @@ function openManual(){
     <div class="grid">
       <div class="card2"><h3>🎯 Doel</h3><p>Vang mosselen op de banken (groene blips op de sonar), kook ze in de kombuis-minigame en verkoop je gerechten in havens. Verdien munten, level je vaardigheden, koop upgrades en betere schepen, en ontdek de geheimen van de zee.</p></div>
       <div class="card2"><h3>🕹️ Besturing</h3><p>${IS_TOUCH
-        ? 'Vaar met de <b>joystick</b> (linksonder). <b>🦪 Vang</b> vasthouden bij een bank. <b>📡 Sonar</b> en <b>⚓ Actie</b> tikken. Knoppen rechtsboven: kaart 🗺️, werf 🔧, camera 📷, meeuw 🐦, pauze ⏸️. Sleep met een tweede vinger over het water om rond te kijken.'
-        : `${key('W')}${key('S')} gas/achteruit · ${key('A')}${key('D')} sturen · ${key('F')} sonar · ${key('Spatie')} vangen · ${key('E')} actie/aanmeren · ${key('H')} harpoen · ${key('C')} camera · ${key('M')} kaart · ${key('U')} werf · ${key('G')} meeuw · ${key('P')} pauze. Sleep met de muis om rond te kijken.`}</p></div>
+        ? 'Vaar met de <b>joystick</b> (linksonder). <b>⚡ Boost</b> vasthouden voor extra snelheid. <b>🦪 Vang</b> vasthouden bij een bank. <b>📡 Sonar</b> en <b>⚓ Actie</b> tikken. Knoppen rechtsboven: kaart 🗺️, werf 🔧, camera 📷, meeuw 🐦, pauze ⏸️. Sleep met een tweede vinger over het water om rond te kijken.'
+        : `${key('W')}${key('S')} gas/achteruit · ${key('A')}${key('D')} sturen · ${key('Shift')} boost · ${key('F')} sonar · ${key('Spatie')} vangen · ${key('E')} actie/aanmeren · ${key('H')} harpoen · ${key('C')} camera · ${key('M')} kaart · ${key('U')} werf · ${key('G')} meeuw · ${key('P')} pauze. Sleep met de muis om rond te kijken.`}</p></div>
       <div class="card2"><h3>🦪 Vangen & koken</h3><p>Ping met de sonar om mosselbanken te vinden. Vaar erheen, houd <b>${IS_TOUCH?'🦪 Vang':'Spatie'}</b> vast tot je ruim vol is. Meer aan in een haven, open de <b>Kombuis</b> en kook met perfecte timing — hoe beter je timing, hoe waardevoller het gerecht.</p></div>
       <div class="card2"><h3>🌊 De open zee</h3><p>Ontdek verborgen eilanden met schatten 🏴‍☠️, red gestrande zeelieden ⛑️, vang exotische dieren voor je aquarium 🐠, vind gouden mosselen 🌟 en flessenpost met missies 📜. Let op het weer en de dag-/nachtcyclus.</p></div>
       <div class="card2" style="grid-column:1/-1"><h3>🐙 Zeemonsters</h3><p>Koop het <b>🔱 Harpoenkanon</b> op de werf. Dan kun je jagen op: de <b>🦑 Kraken</b> (mistige diepte), de <b>🐉 Zeeslang</b> (stormzone), het <b>👻 Spookschip</b> ('s nachts, enter met ${IS_TOUCH?'⚓ Actie':'E'}) en de <b>🦀 Reuzenkrab</b> die havens belegert. Grotere schepen hebben meer vuurkracht en een sterkere romp!</p></div>
