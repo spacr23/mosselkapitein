@@ -2215,8 +2215,10 @@ function drawSonar(){
   sctx.beginPath(); sctx.moveTo(cx,cy-R); sctx.lineTo(cx,cy+R); sctx.moveTo(cx-R,cy); sctx.lineTo(cx+R,cy); sctx.stroke();
   const range = 260 + W.sonarLvl*140;
   const toR=(dx,dz)=>{
-    // rotate so ship heading is up
-    const c=Math.cos(-shipState.heading), s=Math.sin(-shipState.heading);
+    // heading-up radar: the ship sails along (sin h, cos h), so rotate the world
+    // by (h - 180°) to put "straight ahead" at the top and starboard on the right
+    const h=shipState.heading;
+    const c=-Math.cos(h), s=-Math.sin(h);      // cos(h-π), sin(h-π)
     const rx=dx*c - dz*s, rz=dx*s + dz*c;
     return [cx + rx/range*R, cy + rz/range*R];
   };
