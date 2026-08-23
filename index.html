@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="./icon-180.png" />
 <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
 <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png" />
-<title>🦪 Mosselkapitein — De Grote Oceaan</title>
+<title>🦪 Mosselkapitein De Grote Oceaan</title>
 <style>
   :root{
     --gold:#ffd34d; --gold2:#ffb020; --deep:#0a2740; --panel:rgba(8,28,46,.82);
@@ -32,6 +32,13 @@
   .stat b{font-size:16px}
   .stat .ico{font-size:18px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
   .coin{color:var(--gold)}
+  /* coin drawn in CSS so it never depends on emoji fonts */
+  .coinico{display:inline-block;width:18px;height:18px;border-radius:50%;
+    background:radial-gradient(circle at 34% 30%,#ffe89a,#ffc22e 55%,#c98a10);
+    border:1.5px solid #a9720c;box-shadow:inset 0 -2px 3px rgba(0,0,0,.28)}
+  .coinsm{display:inline-block;width:13px;height:13px;border-radius:50%;vertical-align:-2px;margin:0 1px;
+    background:radial-gradient(circle at 34% 30%,#ffe89a,#ffc22e 55%,#c98a10);
+    border:1px solid #a9720c}
   .spacer{flex:1}
 
   .bar{width:90px;height:9px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;position:relative}
@@ -227,15 +234,15 @@
 
 <!-- ============ HUD ============ -->
 <div id="topbar" class="hud">
-  <div class="stat"><span class="ico">🪙</span><b class="coin" id="hudGold">200</b></div>
-  <div class="stat"><span class="ico">⭐</span><div><div style="font-size:12px;color:var(--muted)">Niveau <b id="hudLevel" style="color:var(--ink)">1</b></div><div class="bar"><i class="xpfill" id="hudXP"></i></div></div></div>
-  <div class="stat"><span class="ico">🦪</span><div><div style="font-size:12px;color:var(--muted)">Ruim <b id="hudHoldTxt" style="color:var(--ink)">0/40</b></div><div class="bar"><i class="holdfill" id="hudHold"></i></div></div></div>
+  <div class="stat"><span class="ico coinico"></span><b class="coin" id="hudGold">200</b></div>
+  <div class="stat"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.6 1.3 6.7L12 17.5l-6 3.3 1.3-6.7-5-4.6 6.8-.8z" fill="#ffd34d" stroke="#b8860b" stroke-width="1"/></svg></span><div><div style="font-size:12px;color:var(--muted)">Niveau <b id="hudLevel" style="color:var(--ink)">1</b></div><div class="bar"><i class="xpfill" id="hudXP"></i></div></div></div>
+  <div class="stat"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 14c0-6 4-10 9-11 5 2 8 6 7 12-1 4-4 6-8 6s-8-2-8-7z" fill="#2c3e55" stroke="#8fb3d9" stroke-width="1.2"/><path d="M8 16c1-5 4-9 8-11" stroke="#b8d4f0" stroke-width="1.2" fill="none"/><ellipse cx="12" cy="14" rx="3" ry="2" fill="#f4c27a"/></svg></span><div><div style="font-size:12px;color:var(--muted)">Ruim <b id="hudHoldTxt" style="color:var(--ink)">0/40</b></div><div class="bar"><i class="holdfill" id="hudHold"></i></div></div></div>
   <div class="stat" id="envpill">
     <div class="row"><span class="ico" id="weatherIco">☀️</span><b id="clock">06:00</b><span id="weatherName">Helder</span></div>
     <div class="row" style="font-size:11px;color:var(--muted)"><span id="windInfo">🧭 Wind: NO 12kn</span></div>
   </div>
   <div class="spacer"></div>
-  <div class="stat"><span class="ico">🐟</span><b id="hudFish" style="color:var(--accent)">0</b><span style="font-size:11px;color:var(--muted)">exotisch</span></div>
+  <div class="stat"><span class="ico"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M3 12c3-4 7-5 11-4 2 .5 4 2 5 4-1 2-3 3.5-5 4-4 1-8 0-11-4z" fill="#43c6ff" stroke="#1c7fb0" stroke-width="1"/><path d="M19 12l3-3v6z" fill="#2fa8dd"/><circle cx="8" cy="11" r="1.1" fill="#04202f"/></svg></span><b id="hudFish" style="color:var(--accent)">0</b><span style="font-size:11px;color:var(--muted)">exotisch</span></div>
   <div class="stat" id="seagullStat" style="display:none"><span class="ico">🐦</span><span id="seagullName" style="font-size:12px">Pip</span></div>
 </div>
 
@@ -270,7 +277,7 @@
   <kbd>F</kbd> sonar-ping · <kbd>E</kbd> actie / aanmeren<br>
   <kbd>Spatie</kbd> mosselen vangen<br>
   <kbd>C</kbd> camera · <kbd>M</kbd> kaart · <kbd>U</kbd> upgrades<br>
-  <kbd>Shift</kbd> boost · <kbd>G</kbd> meeuw · <kbd>H</kbd> harpoen · <kbd>P</kbd> pauze<br>
+  <kbd>Shift</kbd> boost · <kbd>G</kbd> meeuw · <kbd>H</kbd> harpoen<br><kbd>N</kbd> muziek · <kbd>P</kbd> pauze<br>
   🖱️ sleep over het water om rond te kijken
 </div>
 
@@ -281,6 +288,7 @@
     <div class="ubtn" id="ubUpg" title="Werf">🔧</div>
     <div class="ubtn" id="ubCam" title="Camera">📷</div>
     <div class="ubtn" id="ubGull" title="Meeuw">🐦</div>
+    <div class="ubtn" id="ubMusic" title="Muziek aan/uit">🎵</div>
     <div class="ubtn" id="ubPause" title="Pauze">⏸️</div>
   </div>
   <div id="joy"><div class="jhint">vaar</div><div id="joyKnob"></div></div>
@@ -308,7 +316,7 @@
 <!-- ============ Title screen ============ -->
 <div id="title">
   <h1>MOSSELKAPITEIN</h1>
-  <div class="tag">Word de beroemdste mosselkapitein ter wereld. Vaar de open oceaan, spoor mosselbanken op met sonar, kook heerlijke gerechten en bouw je vissersrijk uit — door zon, storm en mist.</div>
+  <div class="tag">Word de beroemdste mosselkapitein ter wereld. Vaar de open oceaan, spoor mosselbanken op met sonar, kook heerlijke gerechten en bouw je vissersrijk uit door zon, storm en mist.</div>
   <button class="btn play" id="playBtn">⚓ Uitvaren!</button>
   <div id="titleLinks"></div>
   <div id="loadNote">⏳ Oceaan laden…</div>

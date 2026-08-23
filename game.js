@@ -1,4 +1,4 @@
-// 🦪 MOSSELKAPITEIN — De Grote Oceaan
+// 🦪 MOSSELKAPITEIN De Grote Oceaan
 // Een kleurrijke 3D mossel-visserij simulatie. Three.js, één wereld, geen build-stap.
 import * as THREE from 'three';
 
@@ -54,7 +54,7 @@ const WEATHERS = {
   storm:  { name:'Storm',      ico:'⛈️', wave:3.0, fog:0.00090, sun:0.25,tint:0x6b7a8a },
 };
 
-// Wave parameters — MUST match the GLSL below.
+// Wave parameters MUST match the GLSL below.
 const WAVES = [
   { dir:[ 0.8,  0.6], amp:0.48, len:44, speed:0.8 },
   { dir:[-0.6,  0.8], amp:0.30, len:27, speed:1.05 },
@@ -475,7 +475,7 @@ const harborMarkers=[], islandMeshes=[];
 const harborCores=[];                 // {x,z,r} solid land used for ship collision
 const poiGroup = new THREE.Group(); scene.add(poiGroup);
 
-// build harbors — central land + village + lighthouse + a wooden pier (aanmeerplek)
+// build harbors central land + village + lighthouse + a wooden pier (aanmeerplek)
 for(const h of HARBORS){
   const g = new THREE.Group();
   const R = h.r;
@@ -748,7 +748,7 @@ for(let i=0;i<7;i++) spawnSailor();
 for(let i=0;i<14;i++) spawnExotic();
 
 // ============================================================================
-//  5b. KRAKEN — the giant octopus boss (lurks in the misty deep)
+//  5b. KRAKEN the giant octopus boss (lurks in the misty deep)
 // ============================================================================
 const KRAKEN_LAIR = { x:-2150, z:-1500 };   // far in the misty mystery zone
 function buildTentacle(len, thick){
@@ -850,7 +850,7 @@ function beginKrakenFight(){
 }
 function fireHarpoon(){
   if(!W.started||W.paused) return;
-  if(!W.hasHarpoon){ toast('🔱 Je hebt nog geen harpoen — koop er een op de Werf.','bad'); return; }
+  if(!W.hasHarpoon){ toast('🔱 Je hebt nog geen harpoen koop er een op de Werf.','bad'); return; }
   const targets=activeTargets();
   if(!targets.length){ toast('🔱 Geen doelwit in zicht. Monsters schuilen in mist, storm en nacht…'); return; }
   if(harpoonCd>0) return;
@@ -1004,7 +1004,7 @@ function updateKraken(dt){
 }
 
 // ============================================================================
-//  5c. ZEESLANG — serpent that hunts the stormy north
+//  5c. ZEESLANG serpent that hunts the stormy north
 // ============================================================================
 const SERPENT_HOME = { x:0, z:-1800 };
 const serpent = { group:new THREE.Group(), segs:[], state:'roam', hp:70, hpMax:70,
@@ -1096,7 +1096,7 @@ function updateSerpent(dt){
   } else if(serpent.state==='chase'){
     const dx=shipState.x-serpent.x, dz=shipState.z-serpent.z, d=Math.hypot(dx,dz)||1;
     serpent.heading=Math.atan2(dx,dz);
-    const spd = 26; // fast — outrun it with a quick boat or fight
+    const spd = 26; // fast outrun it with a quick boat or fight
     if(d>26){ serpent.x+=dx/d*spd*dt; serpent.z+=dz/d*spd*dt; }
     serpent.attackTimer-=dt;
     if(serpent.attackTimer<=0 && d<42){
@@ -1142,7 +1142,7 @@ function updateSerpent(dt){
 }
 
 // ============================================================================
-//  5d. SPOOKSCHIP — a ghostly ship that drifts through the night
+//  5d. SPOOKSCHIP a ghostly ship that drifts through the night
 // ============================================================================
 const ghost = { group:new THREE.Group(), state:'hidden', x:0, z:0, heading:0, fade:0, spawnedNight:false };
 (function buildGhost(){
@@ -1229,7 +1229,7 @@ function updateGhost(dt){
 }
 
 // ============================================================================
-//  5e. REUZENKRAB — a colossal crab that lays siege to a harbour
+//  5e. REUZENKRAB a colossal crab that lays siege to a harbour
 // ============================================================================
 const crab = { group:new THREE.Group(), state:'hidden', x:0, z:0, harbor:null,
   hp:150, hpMax:150, attackTimer:3, strafe:0, anchor:{x:0,z:0}, sink:0, claws:[], clawAnim:0 };
@@ -1295,7 +1295,7 @@ function crabDefeated(){
   const claws=2+Math.floor(W.level/5); W.inv.schaar+=claws;
   const gold=1200+W.level*60; W.gold+=gold; W.totalEarned+=gold;
   W.crabsSlain++; W.crabNextDay=W.day+3+Math.floor(Math.random()*2);
-  toast(`🏆 REUZENKRAB VERSLAGEN! ${crab.harbor?crab.harbor.name+' is gered — ':''}+${claws}× 🦀 scharen en +${gold} 🪙!`,'gold');
+  toast(`🏆 REUZENKRAB VERSLAGEN! ${crab.harbor?crab.harbor.name+' is gered ':''}+${claws}× 🦀 scharen en +${gold} 🪙!`,'gold');
   gainXP(250); confettiBurst(crab.x,crab.z);
   beep(523,.12); setTimeout(()=>beep(659,.12),140); setTimeout(()=>beep(880,.2),300);
   bossbarShow(false); W.hull=W.hullMax; checkQuests(); updateHUD();
@@ -1406,6 +1406,7 @@ addEventListener('keydown',e=>{
   if(k==='g') sendSeagull();
   if(k==='h') fireHarpoon();
   if(k==='p') togglePause();
+  if(k==='n') toggleMusic();
   if(k==='escape') closeModal();
 });
 addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
@@ -1493,6 +1494,7 @@ function setupTouch(){
   tap(document.getElementById('ubUpg'), ()=>openHarbor(nearestHarbor(),'upgrades'));
   tap(document.getElementById('ubCam'), cycleCamera);
   tap(document.getElementById('ubGull'), sendSeagull);
+  tap(document.getElementById('ubMusic'), toggleMusic);
   tap(document.getElementById('ubPause'), togglePause);
 
   // block page scroll/zoom gestures on the game canvas
@@ -1505,7 +1507,7 @@ function setupTouch(){
 }
 
 // ============================================================================
-//  7. GAME LOOP HELPERS — sonar, harvest, interact
+//  7. GAME LOOP HELPERS sonar, harvest, interact
 // ============================================================================
 let harvesting=false, harvestTimer=0, harvestTarget=null;
 let sonarPulse=-1;
@@ -1528,7 +1530,7 @@ function nearestBed(maxD=14){
   return best;
 }
 function nearestHarbor(extra=36){
-  // dock when near the berth — scales with each harbour's size & pier reach
+  // dock when near the berth scales with each harbour's size & pier reach
   let best=null,bd=Infinity;
   for(const h of harborMarkers){
     const reach=(h.r||40)*1.6+extra;
@@ -1608,7 +1610,7 @@ function visitIsland(isl){
     toast(`🏴‍☠️ Schatkist op ${isl.name}! +${loot} 🪙`,'gold');
     gainXP(60); checkQuests(); updateHUD(); confettiBurst(isl.x,isl.z);
   } else {
-    toast(`🏝️ ${isl.name} — een mooi plekje, maar geen schat (meer).`);
+    toast(`🏝️ ${isl.name} een mooi plekje, maar geen schat (meer).`);
   }
 }
 const BOTTLE_MISSIONS=[
@@ -1624,7 +1626,7 @@ function openBottle(b){
   const m=BOTTLE_MISSIONS[Math.floor(Math.random()*BOTTLE_MISSIONS.length)];
   const reward=m.reward;
   W.gold += Math.floor(reward*0.4); // immediate finder's fee + lore
-  toast(`📜 Flessenpost! "${m.t}" — Vindersloon +${Math.floor(reward*0.4)} 🪙`,'gold');
+  toast(`📜 Flessenpost! "${m.t}" Vindersloon +${Math.floor(reward*0.4)} 🪙`,'gold');
   gainXP(30); updateHUD();
   setTimeout(spawnBottle, 8000);
 }
@@ -1747,7 +1749,7 @@ function renderQuests(){
 }
 
 // ============================================================================
-//  11. UI — HUD, toasts, prompt, modals
+//  11. UI HUD, toasts, prompt, modals
 // ============================================================================
 const $=id=>document.getElementById(id);
 function updateHUD(){
@@ -1768,10 +1770,12 @@ function toast(msg,kind=''){
   setTimeout(()=>el.remove(),4200);
   const t=$('toasts'); while(t.children.length>5) t.firstChild.remove();
 }
-function showPrompt(html){ const p=$('prompt'); p.innerHTML=html; p.style.display='block'; }
+function showPrompt(html){ const p=$('prompt'); p.innerHTML=iconize(html); p.style.display='block'; }
 function hidePrompt(){ $('prompt').style.display='none'; }
 
-function openModal(html){ $('modal').innerHTML=html; $('overlay').style.display='flex'; W.paused=true; }
+// swap coin/fish emoji for CSS shapes so they render on every device
+function iconize(html){ return String(html).replace(/🪙/g,'<span class="coinsm"></span>'); }
+function openModal(html){ $('modal').innerHTML=iconize(html); $('overlay').style.display='flex'; W.paused=true; }
 function closeModal(){ $('overlay').style.display='none'; cookGame.active=false; if(!mapOpen) W.paused=false; }
 
 // ---- Harbor modal ----
@@ -1806,7 +1810,7 @@ function tabVerkoop(h){
   rows+=invRow('🐠 Exotische dieren', W.inv.exoot, 60, ()=>`window.__sell('exoot')`,'(of doneer aan aquarium)');
   rows+=invRow('🖋️ Krakeninkt', W.inv.krakeninkt, 220, ()=>`window.__sell('krakeninkt')`,'(zeldzame buit van de Kraken)');
   rows+=invRow('🐲 Zeeslangschubben', W.inv.schub, 150, ()=>`window.__sell('schub')`,'(glinsterende buit van de zeeslang)');
-  rows+=invRow('🦀 Krabbenscharen', W.inv.schaar, 180, ()=>`window.__sell('schaar')`,'(delicatesse — buit van de reuzenkrab)');
+  rows+=invRow('🦀 Krabbenscharen', W.inv.schaar, 180, ()=>`window.__sell('schaar')`,'(delicatesse buit van de reuzenkrab)');
   // dishes
   let dishRows='';
   for(const r of RECIPES){
@@ -1831,13 +1835,13 @@ function tabMarkt(h){
   // buy bait/charts/aquariumfish? Keep simple: buy fuel-free; sell-side mostly. Add: sea charts reveal beds, weather machine fuel.
   return `<div class="grid">
     <div class="card2"><h3>🗺️ Zeekaart</h3><p>Onthult alle mosselbanken in dit biome op je sonar.</p>
-      <button class="btn" onclick="window.__buyChart()">Koop — <span class="price">150 🪙</span></button></div>
+      <button class="btn" onclick="window.__buyChart()">Koop <span class="price">150 🪙</span></button></div>
     <div class="card2"><h3>🪝 Aas-emmer</h3><p>Lokt direct een verse mosselbank vlak naast je schip.</p>
-      <button class="btn" onclick="window.__buyBait()">Koop — <span class="price">80 🪙</span></button></div>
-    <div class="card2"><h3>🛠️ Reparatie & Proviand</h3><p>Vol de tank, herstel het schip. (cosmetisch — je zinkt nooit!)</p>
-      <button class="btn alt" onclick="window.__repair()">Onderhoud — <span class="price">40 🪙</span></button></div>
+      <button class="btn" onclick="window.__buyBait()">Koop <span class="price">80 🪙</span></button></div>
+    <div class="card2"><h3>🛠️ Reparatie & Proviand</h3><p>Vol de tank, herstel het schip. (cosmetisch je zinkt nooit!)</p>
+      <button class="btn alt" onclick="window.__repair()">Onderhoud <span class="price">40 🪙</span></button></div>
     <div class="card2"><h3>🌦️ Weersmachine brandstof</h3><p>${W.hasWeatherMachine?'Lokt beter weer voor 1 cyclus.':'Vereist Weersmachine (Werf).'}</p>
-      <button class="btn" ${W.hasWeatherMachine?'':'disabled'} onclick="window.__buyWeatherFuel()">Koop — <span class="price">120 🪙</span></button></div>
+      <button class="btn" ${W.hasWeatherMachine?'':'disabled'} onclick="window.__buyWeatherFuel()">Koop <span class="price">120 🪙</span></button></div>
   </div>`;
 }
 function tabKombuis(h){
@@ -1851,7 +1855,7 @@ function tabKombuis(h){
       <button class="btn" ${locked||!enough?'disabled':''} onclick="window.__cook('${r.name}')">${locked?'🔒 Vergrendeld':(enough?'👨‍🍳 Koken (minigame)':'Te weinig ingrediënten')}</button>
     </div>`;
   }
-  return `<div class="sub">Kook rauwe mosselen tot gerechten — die brengen véél meer op. Hoe beter je timing, hoe waardevoller het bord!</div>
+  return `<div class="sub">Kook rauwe mosselen tot gerechten die brengen véél meer op. Hoe beter je timing, hoe waardevoller het bord!</div>
     <div class="grid">${cards}</div>`;
 }
 function tabUpgrades(h){
@@ -1864,7 +1868,7 @@ function tabUpgrades(h){
       buy:()=>{ W.harvestLvl++; }},
     {k:'sonar', name:'📡 Sonar-uitbreiding', desc:`Bereik niveau ${W.sonarLvl} → ${W.sonarLvl+1}`, price:Math.round(200*Math.pow(1.6,W.sonarLvl-1)), can:W.sonarLvl<6,
       buy:()=>{ W.sonarLvl++; }},
-    {k:'harpoon', name:'🔱 Harpoenkanon', desc:W.hasHarpoon?'Gemonteerd ✓ (toets H / 🔱-knop)':'Verdedig je tegen de Kraken — vuur harpoenen af', price:1500, can:!W.hasHarpoon,
+    {k:'harpoon', name:'🔱 Harpoenkanon', desc:W.hasHarpoon?'Gemonteerd ✓ (toets H / 🔱-knop)':'Verdedig je tegen de Kraken vuur harpoenen af', price:1500, can:!W.hasHarpoon,
       buy:()=>{ W.hasHarpoon=true; kraken.known=true; refreshHarpoonBtn(); toast('🔱 Harpoenkanon gemonteerd! De Kraken schuilt in de mistige diepte (west/noordwest).','gold'); }},
     {k:'weather', name:'🌦️ Weersmachine', desc:W.hasWeatherMachine?'Geïnstalleerd ✓':'Beïnvloed het weer beperkt', price:1200, can:!W.hasWeatherMachine,
       buy:()=>{ W.hasWeatherMachine=true; }},
@@ -1876,7 +1880,7 @@ function tabUpgrades(h){
   return `<div class="grid">${items.map(it=>`
     <div class="card2"><h3>${it.name}</h3><p>${it.desc}</p>
       <button class="btn" ${(!it.can||W.gold<it.price)?'disabled':''} onclick="window.__upg('${it.k}',${it.price})">
-      ${it.can?`Koop — <span class="price">${it.price} 🪙</span>`:'✓ Bezit'}</button></div>`).join('')}</div>`;
+      ${it.can?`Koop <span class="price">${it.price} 🪙</span>`:'✓ Bezit'}</button></div>`).join('')}</div>`;
 }
 let UPG_MAP={};
 function tabSchepen(h){
@@ -1888,14 +1892,14 @@ function tabSchepen(h){
       <p>Ruim ${s.hold} · Snelheid ×${s.speed.toFixed(2)}<br>
       🔱 Vuurkracht ${Math.round((11+W.harvestLvl*2)*(1+i*0.22))} · 🛡️ Romp ${100+i*25}</p>
       <button class="btn" ${owned?'disabled':(can&&W.gold>=s.price?'':'disabled')} onclick="window.__buyShip(${i},${s.price})">
-        ${owned?'✓ In bezit':(`Koop — <span class="price">${s.price} 🪙</span>`)}</button>
+        ${owned?'✓ In bezit':(`Koop <span class="price">${s.price} 🪙</span>`)}</button>
     </div>`;}).join('')}</div>`;
 }
 function tabKapitein(h){
   const sk=W.skills;
-  const aqua = W.aquarium.length? W.aquarium.map(n=>`🐠 ${n}`).join(' · ') : 'Nog leeg — vang exotische zeedieren!';
+  const aqua = W.aquarium.length? W.aquarium.map(n=>`🐠 ${n}`).join(' · ') : 'Nog leeg vang exotische zeedieren!';
   return `<div class="grid">
-    <div class="card2"><h3>🧑‍✈️ Kapitein — Niveau ${W.level}</h3>
+    <div class="card2"><h3>🧑‍✈️ Kapitein Niveau ${W.level}</h3>
       <p>XP ${Math.floor(W.xp)}/${W.xpNext}<br>
       🧭 Navigatie ${sk.navigatie} · 👨‍🍳 Koken ${sk.koken}<br>🤝 Handel ${sk.handel} · 🎣 Visserij ${sk.visserij}</p></div>
     <div class="card2"><h3>🏆 Statistieken</h3><p>
@@ -1905,7 +1909,7 @@ function tabKapitein(h){
     <div class="card2" style="grid-column:1/-1"><h3>🐟 Aquarium aan boord</h3><p>${aqua}</p></div>
     <div class="card2" style="grid-column:1/-1"><h3>🍳 Kookwedstrijd</h3>
       <p>Daag de lokale kapitein uit! Kook een gerecht met perfecte timing en win een prijs.</p>
-      <button class="btn" ${(W.inv.mossel<10)?'disabled':''} onclick="window.__contest()">Doe mee (10× 🦪) — prijs tot 600 🪙</button></div>
+      <button class="btn" ${(W.inv.mossel<10)?'disabled':''} onclick="window.__contest()">Doe mee (10× 🦪) prijs tot 600 🪙</button></div>
   </div>`;
 }
 function biomeLabel(b){ return {kust:'🌅 Rustige kustwateren',storm:'⛈️ Stormachtige noordzee',tropisch:'🏝️ Tropische wateren',mist:'🌫️ Mistige mysterezone'}[b]||b; }
@@ -2105,13 +2109,13 @@ function renderCook(){
   openModal(`
     <h2>👨‍🍳 ${cookGame.contest?'Kookwedstrijd':'Koken'}: ${r.icon} ${r.name}</h2>
     ${cookSceneSVG()}
-    <div class="sub">${IS_TOUCH?'Tik op <b>👆 TIK!</b>':'Druk <b>Spatie</b>'} als de naald in de <span style="color:var(--good)">groene zone</span> staat — raak de <span style="color:var(--gold)">gouden kern</span> voor 'perfect'. ${cookGame.need} keer raak = klaar.</div>
+    <div class="sub">${IS_TOUCH?'Tik op <b>👆 TIK!</b>':'Druk <b>Spatie</b>'} als de naald in de <span style="color:var(--good)">groene zone</span> staat raak de <span style="color:var(--gold)">gouden kern</span> voor 'perfect'. ${cookGame.need} keer raak = klaar.</div>
     <div id="cookTrack">
       <div id="cookZone" style="left:${cookGame.zoneL*100}%;width:${cookGame.zoneW*100}%"></div>
       <div id="cookPerfect" style="left:${cookGame.perfL*100}%;width:${cookGame.perfW*100}%"></div>
       <div id="cookNeedle" style="left:${cookGame.pos*100}%"></div>
     </div>
-    <div id="cookInfo">Treffers: <b id="cookHits">${cookGame.hits}</b>/${cookGame.need} · Kwaliteit: <b id="cookQual">—</b></div>
+    <div id="cookInfo">Treffers: <b id="cookHits">${cookGame.hits}</b>/${cookGame.need} · Kwaliteit: <b id="cookQual"></b></div>
     <div style="text-align:center;margin-top:12px;display:flex;gap:10px;justify-content:center">
       ${IS_TOUCH?'<button class="btn" style="font-size:17px;padding:12px 26px" onclick="window.__cookTap()">👆 TIK!</button>':''}
       <button class="btn alt" onclick="window.__close()">Stoppen</button></div>
@@ -2164,27 +2168,92 @@ addEventListener('keydown',e=>{ if(cookGame.active && e.key===' '){ e.preventDef
 //  13. MAP (toets M)
 // ============================================================================
 let mapOpen=false;
+const mapView={ zoom:1, cx:0, cz:0 };     // cx/cz = world point at the centre of the map
 function toggleMap(){ mapOpen?closeMap():openMap(); }
 function openMap(){
   mapOpen=true; W.paused=true;
+  mapView.zoom=1; mapView.cx=0; mapView.cz=0;
   const chip=(c,label,shape='●')=>`<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px"><span style="color:${c};font-size:14px;line-height:1">${shape}</span>${label}</span>`;
   openModal(`<button class="closeX" onclick="window.__closemap()">✕</button>
-    <h2>Zeekaart</h2><div class="sub">De grote oceaan en haar vier zeeën. De witte pijl is jouw schip en koers.</div>
-    <canvas id="bigmap" width="720" height="720" style="width:100%;max-height:62vh;border-radius:12px;border:1px solid var(--line);background:#062640"></canvas>
+    <h2>Zeekaart</h2><div class="sub">De grote oceaan en haar vier zeeën. De witte pijl is jouw schip en koers.
+      ${IS_TOUCH?'Knijp of gebruik de knoppen om te zoomen; sleep om te schuiven.':'Scroll om te zoomen, sleep om te schuiven.'}</div>
+    <canvas id="bigmap" width="720" height="720" style="width:100%;max-height:62vh;border-radius:12px;border:1px solid var(--line);background:#062640;cursor:grab;touch-action:none"></canvas>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap">
+      <button class="btn alt" style="padding:6px 14px" onclick="window.__mapZoom(1/1.4)">−</button>
+      <button class="btn alt" style="padding:6px 14px" onclick="window.__mapZoom(1.4)">+</button>
+      <button class="btn alt" style="padding:6px 14px" onclick="window.__mapCenterShip()">Centreer op schip</button>
+      <button class="btn alt" style="padding:6px 14px" onclick="window.__mapReset()">Hele kaart</button>
+    </div>
     <div class="sub" style="margin-top:10px;display:flex;flex-wrap:wrap;row-gap:4px">
       ${chip('#ff9d4d','haven','■')}${chip('#8fcf7a','eiland')}${chip('#ffd34d','schat','★')}${chip('#5bd97a','mosselbank','·')}${chip('#ffd34d','gouden bank','·')}
       ${chip('#9affc8','flessenpost','▲')}${chip('#ff6b6b','zeeman','✚')}${chip('#ff5a7a','monster','◆')}
     </div>`);
+  setupMapInput();
   drawBigMap();
+}
+const MAP_R=3000;
+function clampMapView(){
+  mapView.zoom=Math.max(1, Math.min(8, mapView.zoom));
+  const half=MAP_R/mapView.zoom;            // visible half-extent in world units
+  const lim=MAP_R-half;                     // don't scroll past the world edge
+  mapView.cx=Math.max(-lim,Math.min(lim,mapView.cx));
+  mapView.cz=Math.max(-lim,Math.min(lim,mapView.cz));
+}
+window.__mapZoom=(f)=>{ mapView.zoom*=f; clampMapView(); drawBigMap(); };
+window.__mapCenterShip=()=>{ mapView.zoom=Math.max(mapView.zoom,2.5); mapView.cx=shipState.x; mapView.cz=shipState.z; clampMapView(); drawBigMap(); };
+window.__mapReset=()=>{ mapView.zoom=1; mapView.cx=0; mapView.cz=0; drawBigMap(); };
+function setupMapInput(){
+  const cv=$('bigmap'); if(!cv) return;
+  // wheel: zoom toward the cursor
+  cv.addEventListener('wheel', e=>{
+    e.preventDefault();
+    const r=cv.getBoundingClientRect();
+    const half=MAP_R/mapView.zoom;
+    const wx=mapView.cx + ((e.clientX-r.left)/r.width  *2-1)*half;   // world point under cursor
+    const wz=mapView.cz + ((e.clientY-r.top )/r.height *2-1)*half;
+    const before=mapView.zoom;
+    mapView.zoom *= (e.deltaY<0? 1.18 : 1/1.18);
+    clampMapView();
+    if(mapView.zoom!==before){                                       // keep that point under the cursor
+      const k=1-before/mapView.zoom;
+      mapView.cx += (wx-mapView.cx)*k;
+      mapView.cz += (wz-mapView.cz)*k;
+      clampMapView();
+    }
+    drawBigMap();
+  }, {passive:false});
+  // drag to pan (mouse + touch)
+  let id=null, lx=0, ly=0;
+  cv.addEventListener('pointerdown', e=>{ id=e.pointerId; lx=e.clientX; ly=e.clientY; cv.style.cursor='grabbing';
+    try{ cv.setPointerCapture(id); }catch(_){} });
+  cv.addEventListener('pointermove', e=>{
+    if(e.pointerId!==id) return;
+    const r=cv.getBoundingClientRect(), half=MAP_R/mapView.zoom;
+    mapView.cx -= (e.clientX-lx)/r.width *2*half;
+    mapView.cz -= (e.clientY-ly)/r.height*2*half;
+    lx=e.clientX; ly=e.clientY; clampMapView(); drawBigMap();
+  });
+  const end=e=>{ if(e.pointerId===id){ id=null; cv.style.cursor='grab'; } };
+  cv.addEventListener('pointerup',end); cv.addEventListener('pointercancel',end);
+  // pinch to zoom on touch
+  let pinch=null;
+  cv.addEventListener('touchmove', e=>{
+    if(e.touches.length!==2) return;
+    e.preventDefault();
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    if(pinch){ mapView.zoom*=d/pinch; clampMapView(); drawBigMap(); }
+    pinch=d;
+  }, {passive:false});
+  cv.addEventListener('touchend', ()=>{ pinch=null; });
 }
 window.__closemap=()=>{ mapOpen=false; closeModal(); W.paused=false; };
 function closeMap(){ window.__closemap(); }
 function drawBigMap(){
   const cv=$('bigmap'); if(!cv) return; const ctx=cv.getContext('2d');
   const Wc=cv.width, Hc=cv.height;
-  // uniform scale (the world is square, so the map must be too)
-  const R=3000, S=Math.min(Wc,Hc)/(2*R), ox=Wc/2, oy=Hc/2;
-  const sx=v=>ox+v*S, sy=v=>oy+v*S;
+  // uniform scale (the world is square) with zoom + pan applied
+  const R=MAP_R, S=Math.min(Wc,Hc)/(2*R)*mapView.zoom, ox=Wc/2, oy=Hc/2;
+  const sx=v=>ox+(v-mapView.cx)*S, sy=v=>oy+(v-mapView.cz)*S;
   ctx.clearRect(0,0,Wc,Hc);
 
   // ---- sea: deep gradient + biome tints (match biomeAt thresholds) ----
@@ -2242,7 +2311,7 @@ function drawBigMap(){
     ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke(); label(name,x,y+18,col,10); };
   if(kraken.known && kraken.state!=='gone') diamond(sx(kraken.x),sy(kraken.z),'#d56bff','Kraken');
   if(serpent.known && serpent.state!=='gone') diamond(sx(serpent.x),sy(serpent.z),'#7fe8c0','Zeeslang');
-  if(crabActive()) diamond(sx(crab.x),sy(crab.z),'#ff7a3d','Reuzenkrab — AANVAL!');
+  if(crabActive()) diamond(sx(crab.x),sy(crab.z),'#ff7a3d','Reuzenkrab AANVAL!');
   if(ghost.state==='sailing' && ghost.fade>0.3) diamond(sx(ghost.x),sy(ghost.z),'#baffdf','Spookschip');
 
   // ---- the ship: white arrow pointing along the heading ----
@@ -2589,9 +2658,9 @@ function updatePrompt(){
   const gh=nearbyGhost();
   if(gh){ showPrompt(`<b>👻 Spookschip!</b><br>${A_E} Enteren en plunderen… durf jij?`); return; }
   const h=nearestHarbor();
-  if(h){ showPrompt(`<b>${h.icon} ${h.name}</b><br>${A_E} Aanmeren — verkoop, kook & upgrade`); return; }
+  if(h){ showPrompt(`<b>${h.icon} ${h.name}</b><br>${A_E} Aanmeren verkoop, kook & upgrade`); return; }
   const isl=nearbyIsland();
-  if(isl){ showPrompt(`<b>🏝️ ${isl.name}</b><br>${A_E} ${isl.treasure&&!isl.visited?'Ga aan land — schat zoeken!':'Verken het eiland'}`); return; }
+  if(isl){ showPrompt(`<b>🏝️ ${isl.name}</b><br>${A_E} ${isl.treasure&&!isl.visited?'Ga aan land schat zoeken!':'Verken het eiland'}`); return; }
   const s=nearbySailor(); if(s){ showPrompt(`<b>⛑️ Gestrande zeeman!</b><br>${A_E} Redden voor beloning`); return; }
   const bt=nearbyBottle(); if(bt){ showPrompt(`<b>📜 Flessenpost drijft voorbij</b><br>${A_E} Openmaken`); return; }
   const ex=nearbyExotic(); if(ex){ showPrompt(`<b>🐠 Exotisch zeedier!</b><br>${A_E} Vangen voor je aquarium`); return; }
@@ -2743,6 +2812,88 @@ function beep(freq,dur=0.1,vol=0.05){
 }
 
 // ============================================================================
+//  19b. MUSIC - generative ambient score (synthesised live, nothing to download)
+//   Slow drifting chords + a sparse melody in a minor pentatonic scale, run
+//   through a generated reverb. It never repeats exactly and costs 0 bytes.
+// ============================================================================
+const music = { on:true, started:false, bus:null, wet:null, timer:null, step:0, vol:0.5 };
+function makeReverb(seconds=3.2, decay=2.4){
+  const rate=actx.sampleRate, len=Math.floor(rate*seconds);
+  const buf=actx.createBuffer(2,len,rate);
+  for(let ch=0; ch<2; ch++){
+    const d=buf.getChannelData(ch);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len, decay);
+  }
+  const c=actx.createConvolver(); c.buffer=buf; return c;
+}
+// A minor-ish sea scale; chords wander so it never sounds like a loop
+const CHORDS=[ [55,65.41,82.41],   // Am
+               [49,61.74,73.42],   // G
+               [43.65,55,65.41],   // F
+               [36.71,55,73.42] ]; // Dm-ish
+const MELODY=[220,261.63,293.66,329.63,392,440,523.25];
+function startMusic(){
+  if(music.started||!music.on) return;
+  try{
+    if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+    music.started=true;
+    music.bus=actx.createGain(); music.bus.gain.value=music.vol*0.5;
+    const rev=makeReverb();
+    music.wet=actx.createGain(); music.wet.gain.value=0.5;
+    music.bus.connect(actx.destination);
+    music.bus.connect(music.wet); music.wet.connect(rev); rev.connect(actx.destination);
+    scheduleMusic();
+  }catch(e){ music.started=false; }
+}
+function voice(freq, t, dur, type, peak, filterHz){
+  const o=actx.createOscillator(), g=actx.createGain(), f=actx.createBiquadFilter();
+  o.type=type; o.frequency.value=freq;
+  f.type='lowpass'; f.frequency.value=filterHz;
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(peak, t+dur*0.35);      // slow swell
+  g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+  o.connect(f); f.connect(g); g.connect(music.bus);
+  o.start(t); o.stop(t+dur+0.1);
+}
+function scheduleMusic(){
+  if(!music.started) return;
+  const bar=7.5;                                   // slow, tidal pace
+  const t=actx.currentTime+0.1;
+  const chord=CHORDS[music.step%CHORDS.length];
+  // pad: each chord tone with a slightly detuned partner
+  for(const f of chord){
+    voice(f,      t, bar*1.25, 'sine',     0.16, 900);
+    voice(f*2.005,t, bar*1.25, 'triangle', 0.05, 1400);
+  }
+  // bass swell on the root
+  voice(chord[0]/2, t, bar*1.3, 'sine', 0.13, 320);
+  // a few sparse melody notes, quieter at night so the sea stays calm
+  const notes=1+Math.floor(Math.random()*3);
+  for(let i=0;i<notes;i++){
+    const when=t+bar*(0.15+Math.random()*0.7);
+    const n=MELODY[Math.floor(Math.random()*MELODY.length)];
+    voice(n, when, 2.2+Math.random()*1.5, 'sine', 0.055, 2200);
+  }
+  music.step++;
+  music.timer=setTimeout(scheduleMusic, bar*1000);
+}
+function stopMusic(){
+  music.started=false;
+  if(music.timer){ clearTimeout(music.timer); music.timer=null; }
+  if(music.bus){ try{ music.bus.gain.linearRampToValueAtTime(0.0001, actx.currentTime+0.6); }catch(e){} }
+}
+function toggleMusic(){
+  music.on=!music.on;
+  if(music.on){ startMusic(); if(music.bus) music.bus.gain.setValueAtTime(music.vol*0.5, actx.currentTime); toast('🎵 Muziek aan'); }
+  else { stopMusic(); toast('🔇 Muziek uit'); }
+  try{ localStorage.setItem('mosselkapitein_music', music.on?'1':'0'); }catch(e){}
+  refreshMusicBtn();
+}
+function refreshMusicBtn(){ const b=$('ubMusic'); if(b) b.textContent = music.on?'🎵':'🔇'; }
+window.__toggleMusic=toggleMusic;
+try{ if(localStorage.getItem('mosselkapitein_music')==='0') music.on=false; }catch(e){}
+
+// ============================================================================
 //  20. UTIL + TEXTURES
 // ============================================================================
 function dist2(x1,z1,x2,z2){ const dx=x1-x2,dz=z1-z2; return dx*dx+dz*dz; }
@@ -2787,9 +2938,17 @@ function openManual(){
       <div class="card2"><h3>🕹️ Besturing</h3><p>${IS_TOUCH
         ? 'Vaar met de <b>joystick</b> (linksonder). <b>⚡ Boost</b> vasthouden voor extra snelheid. <b>🦪 Vang</b> vasthouden bij een bank. <b>📡 Sonar</b> en <b>⚓ Actie</b> tikken. Knoppen rechtsboven: kaart 🗺️, werf 🔧, camera 📷, meeuw 🐦, pauze ⏸️. Sleep met een tweede vinger over het water om rond te kijken.'
         : `${key('W')}${key('S')} gas/achteruit · ${key('A')}${key('D')} sturen · ${key('Shift')} boost · ${key('F')} sonar · ${key('Spatie')} vangen · ${key('E')} actie/aanmeren · ${key('H')} harpoen · ${key('C')} camera · ${key('M')} kaart · ${key('U')} werf · ${key('G')} meeuw · ${key('P')} pauze. Sleep met de muis om rond te kijken.`}</p></div>
-      <div class="card2"><h3>🦪 Vangen & koken</h3><p>Ping met de sonar om mosselbanken te vinden. Vaar erheen, houd <b>${IS_TOUCH?'🦪 Vang':'Spatie'}</b> vast tot je ruim vol is. Meer aan in een haven, open de <b>Kombuis</b> en kook met perfecte timing — hoe beter je timing, hoe waardevoller het gerecht.</p></div>
+      <div class="card2"><h3>🦪 Vangen & koken</h3><p>Ping met de sonar om mosselbanken te vinden. Vaar erheen, houd <b>${IS_TOUCH?'🦪 Vang':'Spatie'}</b> vast tot je ruim vol is. Meer aan in een haven, open de <b>Kombuis</b> en kook met perfecte timing hoe beter je timing, hoe waardevoller het gerecht.</p></div>
       <div class="card2"><h3>🌊 De open zee</h3><p>Ontdek verborgen eilanden met schatten 🏴‍☠️, red gestrande zeelieden ⛑️, vang exotische dieren voor je aquarium 🐠, vind gouden mosselen 🌟 en flessenpost met missies 📜. Let op het weer en de dag-/nachtcyclus.</p></div>
-      <div class="card2" style="grid-column:1/-1"><h3>🐙 Zeemonsters</h3><p>Koop het <b>🔱 Harpoenkanon</b> op de werf. Dan kun je jagen op: de <b>🦑 Kraken</b> (mistige diepte), de <b>🐉 Zeeslang</b> (stormzone), het <b>👻 Spookschip</b> ('s nachts, enter met ${IS_TOUCH?'⚓ Actie':'E'}) en de <b>🦀 Reuzenkrab</b> die havens belegert. Grotere schepen hebben meer vuurkracht en een sterkere romp!</p></div>
+      <div class="card2" style="grid-column:1/-1"><h3>🐙 Zeemonsters: waar en wanneer</h3>
+        <p>Koop eerst het <b>🔱 Harpoenkanon</b> op de werf (1500). Grotere schepen hebben meer vuurkracht en een sterkere romp.</p>
+        <p style="margin-top:8px">
+        <b>🦑 Kraken</b> - ligt op de loer in het <b>uiterste noordwesten</b> van de mistige zone. Vaar daarheen; zodra je in de buurt komt rijst hij op. Verslagen? Dan blijft hij <b>3 dagen</b> weg.<br>
+        <b>🐉 Zeeslang</b> - zwerft rond in de <b>stormachtige noordzee</b> (het hele noorden). Ziet hij je, dan jaagt hij op je. Na een kill <b>3 dagen</b> weg.<br>
+        <b>👻 Spookschip</b> - verschijnt <b>elke nacht</b> (tussen 21:00 en 05:00), ergens bij je in de buurt. Enter het met ${IS_TOUCH?'<b>⚓ Actie</b>':'<b>E</b>'} voor spookgoud; bij dageraad lost het op.<br>
+        <b>🦀 Reuzenkrab</b> - belegert <b>om de 3 à 4 dagen</b> een willekeurige haven. Je krijgt een alarmmelding en ziet hem op de kaart.
+        </p>
+        <p style="margin-top:8px;color:var(--muted)">Tip: alle monsters staan ook op je <b>zeekaart</b> en <b>sonar</b> zodra ze actief of ontdekt zijn.</p></div>
     </div>
     <div style="text-align:center;margin-top:16px"><button class="btn" onclick="window.__backToPause()">◀ Terug</button></div>`);
 }
@@ -2797,7 +2956,7 @@ window.__manual=openManual;
 window.__backToPause=()=>{ closeModal(); W.paused=false; togglePause(); };
 
 // ============================================================================
-//  21b. SAVE / LOAD  (localStorage — survives reloads & app restarts)
+//  21b. SAVE / LOAD  (localStorage survives reloads & app restarts)
 // ============================================================================
 const SAVE_KEY='mosselkapitein_save_v1';
 let loadedFromSave=false;
@@ -2825,7 +2984,7 @@ function serializeSave(){
 function saveGame(){
   if(!W.started) return;
   try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serializeSave())); }
-  catch(e){ /* private mode / quota — ignore */ }
+  catch(e){ /* private mode / quota ignore */ }
 }
 
 function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
@@ -2888,6 +3047,9 @@ addEventListener('beforeunload', saveGame);
 function startGame(){
   W.started=true;
   document.getElementById('title').classList.add('hidden');
+  if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  startMusic();                       // needs this user gesture to be allowed on iOS
+  refreshMusicBtn();
   if(loadedFromSave){
     setWeather(W.weather||'clear');
     updateHUD(); renderQuests(); checkQuests();
@@ -2916,6 +3078,8 @@ if(IS_TOUCH){
   $('sonarLabel').innerHTML='📡 SONAR';
 }
 setupLook(); // drag the water (touch or mouse) to look around
+// music button also works with a mouse (the util row is visible on desktop too)
+{ const mb=$('ubMusic'); if(mb && !IS_TOUCH) mb.addEventListener('click', toggleMusic); }
 
 // expose for debugging / test harness
 window.W=W; window.shipState=shipState; window.beds=beds; window.setWeatherDbg=setWeather;
@@ -2927,6 +3091,7 @@ window.kraken=kraken; window.fireHarpoon=fireHarpoon; window.beginKrakenFight=be
 window.serpent=serpent; window.serpentHit=serpentHit; window.ghost=ghost; window.lootGhost=lootGhost; window.nearbyGhost=nearbyGhost;
 window.crab=crab; window.crabHit=crabHit; window.beginCrabSiege=beginCrabSiege; window.weaponDamage=weaponDamage;
 window.getShipMesh=()=>shipMesh;
+window.music=music; window.mapView=mapView; window.drawBigMap=drawBigMap;
 
 // Restore a previous save (if any) and adjust the title screen accordingly
 if(hasSave()){
@@ -2945,5 +3110,5 @@ if(loadedFromSave){
 }
 
 // Kick off loop
-$('loadNote').textContent = loadedFromSave ? '✅ Opgeslagen reis gevonden — klik Verder spelen.' : '✅ Klaar! Klik Uitvaren.';
+$('loadNote').textContent = loadedFromSave ? '✅ Opgeslagen reis gevonden klik Verder spelen.' : '✅ Klaar! Klik Uitvaren.';
 requestAnimationFrame(update);
