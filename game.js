@@ -33,7 +33,7 @@ const W = {
   buffs: {},               // name -> seconds remaining
   questsDone: new Set(),
   rescued: 0, treasures: 0, bottles: 0,
-  paused: false, started: false,
+  paused: false, started: false, dead: false,
 };
 
 const SHIPS = [
@@ -918,20 +918,36 @@ function krakenAttack(){
     splash(shipState.x,shipState.z); beep(140,.25,0.05);
     if(W.inv.mossel>0 && Math.random()<0.5){ const steal=Math.min(3,W.inv.mossel); W.inv.mossel-=steal;
       toast(`🦑 Een tentakel griste ${steal}× 🦪 mee!`,'bad'); }
-    if(W.hull<=0) krakenRepel();
   }
 }
-function damageHull(n){ W.hull=Math.max(0,W.hull-n); flashDamage(); bossbarUpdate(); updateHUD(); }
-function krakenRepel(){
-  toast('🚨 De Kraken sloeg je terug! Je vlucht naar veiliger water.','bad');
-  const lost=Math.floor(holdCount()*0.12); if(lost>0){ let l=lost; const t=Math.min(l,W.inv.mossel); W.inv.mossel-=t; l-=t; if(l>0) W.inv.goudmossel=Math.max(0,W.inv.goudmossel-l); }
-  // shove the ship well clear of the lair
-  const nx=(shipState.x-kraken.x), nz=(shipState.z-kraken.z), d=Math.hypot(nx,nz)||1;
-  shipState.x=kraken.x+nx/d*700; shipState.z=kraken.z+nz/d*700; shipState.speed=0;
-  kraken.state='lurking'; kraken.hp=kraken.hpMax; W.hull=W.hullMax;
-  kraken.x=KRAKEN_LAIR.x; kraken.z=KRAKEN_LAIR.z; kraken.group.position.set(kraken.x,-60,kraken.z);
-  W.krakenGoneUntilDay=W.day+1; bossbarShow(false); updateHUD();
+function damageHull(n){
+  if(W.dead) return;
+  W.hull=Math.max(0,W.hull-n); flashDamage(); bossbarUpdate(); updateHUD();
+  if(W.hull<=0) sinkShip();
 }
+// ---- sinking: the run is over and the save is wiped ----
+function sinkShip(){
+  if(W.dead) return;
+  W.dead=true; W.paused=true;
+  bossbarShow(false); currentBoss=null;
+  // end every fight so nothing keeps hitting a wreck
+  if(krakenActive()) kraken.state='lurking';
+  if(serpentActive()) serpent.state='roam';
+  if(crabActive()){ crab.state='hidden'; crab.group.visible=false; }
+  harvesting=false;
+  beep(90,.6,0.06); setTimeout(()=>beep(70,.9,0.05),300);
+  try{ localStorage.removeItem(SAVE_KEY); }catch(e){}   // progress is lost
+  openModal(`<h2>🌊 Je schip is gezonken</h2>
+    <div class="sub">De zee heeft je te pakken gekregen, Kapitein. Je voortgang is verloren.</div>
+    <div class="grid">
+      <div class="card2"><h3>Bereikt</h3><p>Dag ${W.day} · Niveau ${W.level}</p></div>
+      <div class="card2"><h3>Verdiend</h3><p>${Math.floor(W.totalEarned)} 🪙 totaal</p></div>
+      <div class="card2"><h3>Gevangen</h3><p>${W.totalCaught} mosselen</p></div>
+      <div class="card2"><h3>Monsters</h3><p>${W.krakensSlain+W.serpentsSlain+W.crabsSlain} verslagen</p></div>
+    </div>
+    <div style="text-align:center;margin-top:18px"><button class="btn" onclick="window.__restart()">⚓ Opnieuw uitvaren</button></div>`);
+}
+window.__restart=()=>{ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} location.reload(); };
 function krakenDefeated(){
   kraken.state='dying'; kraken.lootDropped=false;
   const ink=4+Math.floor(W.level/3); W.inv.krakeninkt+=ink;
@@ -1106,14 +1122,6 @@ function updateSerpent(dt){
       shipState.x+=nx*8; shipState.z+=nz*8; shipState.speed*=0.5;
       splash(shipState.x,shipState.z); beep(150,.2,0.05);
       toast('🐉 De zeeslang ramt je schip!','bad');
-      if(W.hull<=0){
-        // repelled: lose some catch and get flung clear
-        const lost=Math.floor(holdCount()*0.1);
-        if(lost>0){ const tk=Math.min(lost,W.inv.mossel); W.inv.mossel-=tk; }
-        shipState.x=serpent.x+nx*550; shipState.z=Math.min(-950,serpent.z+nz*550); shipState.speed=0;
-        serpent.state='roam'; serpent.hp=serpent.hpMax; W.hull=W.hullMax; bossbarShow(false);
-        toast('🚨 De zeeslang joeg je weg uit de stormzone!','bad'); updateHUD();
-      }
     }
     // escaped?
     if(d>600){ serpent.state='roam'; serpent.hp=serpent.hpMax; W.hull=W.hullMax; bossbarShow(false);
@@ -1330,6 +1338,14 @@ function updateCrab(dt){
   }
   // siege: sidestep around the anchor point, claws snapping
   crab.strafe+=dt*0.25;
+  // sidestep around the harbour, but stalk toward the player when they come close
+  const pd=Math.hypot(shipState.x-crab.x, shipState.z-crab.z);
+  if(pd<200){
+    const px=crab.anchor.x+(shipState.x-crab.anchor.x)*0.55;
+    const pz=crab.anchor.z+(shipState.z-crab.anchor.z)*0.55;
+    crab.anchor.x+=(px-crab.anchor.x)*Math.min(1,dt*0.35);
+    crab.anchor.z+=(pz-crab.anchor.z)*Math.min(1,dt*0.35);
+  }
   crab.x=crab.anchor.x+Math.cos(crab.strafe)*22;
   crab.z=crab.anchor.z+Math.sin(crab.strafe)*22;
   crab.group.position.set(crab.x, waveHeight(crab.x,crab.z,t,sc)-6+Math.sin(t*1.4)*1.2, crab.z);
@@ -1350,21 +1366,14 @@ function updateCrab(dt){
   }
   // claw slam on ships that come too close
   crab.attackTimer-=dt;
-  if(crab.attackTimer<=0 && d<55){
-    crab.attackTimer=3+Math.random();
+  if(crab.attackTimer<=0 && d<85){
+    crab.attackTimer=2.4+Math.random();
     crab.clawAnim=0.35;
-    damageHull(14+Math.floor(W.level*0.5));
     const nx=(shipState.x-crab.x)/(d||1), nz=(shipState.z-crab.z)/(d||1);
     shipState.x+=nx*12; shipState.z+=nz*12; shipState.speed*=0.4;
     splash(shipState.x,shipState.z); beep(120,.25,0.06);
     toast('🦀 KLAUWSLAG! De reuzenkrab beukt je romp!','bad');
-    if(W.hull<=0){
-      const lost=Math.floor(holdCount()*0.12);
-      if(lost>0){ const tk=Math.min(lost,W.inv.mossel); W.inv.mossel-=tk; }
-      shipState.x=crab.x+nx*400; shipState.z=crab.z+nz*400; shipState.speed=0;
-      W.hull=W.hullMax; bossbarShow(false); currentBoss=null;
-      toast('🚨 De reuzenkrab sloeg je weg van de haven!','bad'); updateHUD();
-    }
+    damageHull(14+Math.floor(W.level*0.5));   // may sink the ship
   }
 }
 
@@ -1407,7 +1416,11 @@ addEventListener('keydown',e=>{
   if(k==='h') fireHarpoon();
   if(k==='p') togglePause();
   if(k==='n') toggleMusic();
-  if(k==='escape') closeModal();
+  // Esc: close whatever is open, otherwise pause the game
+  if(k==='escape' && !W.dead){
+    if($('overlay').style.display==='flex'){ if(mapOpen) window.__closemap(); else closeModal(); }
+    else togglePause();
+  }
 });
 addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
 addEventListener('resize',()=>{
@@ -1512,13 +1525,16 @@ function setupTouch(){
 let harvesting=false, harvestTimer=0, harvestTarget=null;
 let sonarPulse=-1;
 
+// A ping lights beds up only temporarily: the echo fades, so you have to ping again.
+const PING_HOLD = 40;                                   // seconds a contact stays on the scope
+function sonarNow(){ return oceanUniforms.uTime.value; }
+function bedVisible(b){ return b.charted || sonarNow() < (b.pingUntil||0); }
 function sonarPing(){
   sonarPulse=0;
-  // reveal beds within range -> mark known
   const range = 220 + W.sonarLvl*120;
   let found=0;
   for(const b of beds){
-    if(dist2(b.x,b.z,shipState.x,shipState.z) < range*range){ b.known=true; found++; }
+    if(dist2(b.x,b.z,shipState.x,shipState.z) < range*range){ b.pingUntil = sonarNow()+PING_HOLD; found++; }
   }
   toast(found>0? `📡 Sonar: ${found} mosselbank(en) in bereik!` : '📡 Sonar: niets in de buurt…','good');
   beep(660,0.08); setTimeout(()=>beep(880,0.08),90);
@@ -1759,16 +1775,36 @@ function updateHUD(){
   $('hudHoldTxt').textContent=`${holdCount()}/${W.holdMax}`;
   $('hudHold').style.width=(holdCount()/W.holdMax*100)+'%';
   $('hudFish').textContent=W.inv.exoot;
+  // hull / health
+  const pct=Math.max(0,Math.min(1, W.hull/W.hullMax));
+  const hb=$('hudHull');
+  if(hb){
+    hb.style.width=(pct*100)+'%';
+    hb.className='hullfill'+(pct<=0.25?' crit':pct<=0.55?' warn':'');
+    $('hudHullTxt').textContent=Math.round(pct*100)+'%';
+  }
   $('seagullStat').style.display=W.hasSeagull?'flex':'none';
   $('seagullName').textContent=W.seagullName;
 }
 let toastTimer=0;
 function toast(msg,kind=''){
+  const t=$('toasts');
+  // don't stack the same message: refresh the existing one and count repeats
+  const last=t.lastElementChild;
+  if(last && last.dataset.msg===msg){
+    const n=(+last.dataset.n||1)+1;
+    last.dataset.n=n;
+    last.textContent=msg+' ×'+n;
+    clearTimeout(+last.dataset.tid);
+    last.dataset.tid=setTimeout(()=>last.remove(),4200);
+    return;
+  }
   const el=document.createElement('div');
   el.className='toast '+kind; el.textContent=msg;
-  $('toasts').appendChild(el);
-  setTimeout(()=>el.remove(),4200);
-  const t=$('toasts'); while(t.children.length>5) t.firstChild.remove();
+  el.dataset.msg=msg; el.dataset.n=1;
+  t.appendChild(el);
+  el.dataset.tid=setTimeout(()=>el.remove(),4200);
+  while(t.children.length>4) t.firstChild.remove();
 }
 function showPrompt(html){ const p=$('prompt'); p.innerHTML=iconize(html); p.style.display='block'; }
 function hidePrompt(){ $('prompt').style.display='none'; }
@@ -1838,7 +1874,7 @@ function tabMarkt(h){
       <button class="btn" onclick="window.__buyChart()">Koop <span class="price">150 🪙</span></button></div>
     <div class="card2"><h3>🪝 Aas-emmer</h3><p>Lokt direct een verse mosselbank vlak naast je schip.</p>
       <button class="btn" onclick="window.__buyBait()">Koop <span class="price">80 🪙</span></button></div>
-    <div class="card2"><h3>🛠️ Reparatie & Proviand</h3><p>Vol de tank, herstel het schip. (cosmetisch je zinkt nooit!)</p>
+    <div class="card2"><h3>🛠️ Reparatie & Proviand</h3><p>Herstel je romp volledig. Zonder romp zinkt je schip en ben je je voortgang kwijt!</p>
       <button class="btn alt" onclick="window.__repair()">Onderhoud <span class="price">40 🪙</span></button></div>
     <div class="card2"><h3>🌦️ Weersmachine brandstof</h3><p>${W.hasWeatherMachine?'Lokt beter weer voor 1 cyclus.':'Vereist Weersmachine (Werf).'}</p>
       <button class="btn" ${W.hasWeatherMachine?'':'disabled'} onclick="window.__buyWeatherFuel()">Koop <span class="price">120 🪙</span></button></div>
@@ -1947,11 +1983,12 @@ window.__sellDishesAll=()=>{
   renderHarbor(); updateHUD(); checkQuests();
 };
 window.__buyChart=()=>{ if(W.gold<150)return; W.gold-=150; const bi=curHarbor.biome; let n=0;
-  for(const b of beds){ if(b.biome===bi){ b.known=true; n++; } } toast(`🗺️ Kaart onthult ${n} banken in dit biome.`,'good'); renderHarbor(); updateHUD(); };
+  for(const b of beds){ if(b.biome===bi){ b.charted=true; n++; } } toast(`🗺️ Kaart onthult ${n} banken in dit biome.`,'good'); renderHarbor(); updateHUD(); };
 window.__buyBait=()=>{ if(W.gold<80)return; W.gold-=80;
-  const a=Math.random()*6.28; spawnBed(shipState.x+Math.cos(a)*30, shipState.z+Math.sin(a)*30,{}).known=true;
+  const a=Math.random()*6.28; spawnBed(shipState.x+Math.cos(a)*30, shipState.z+Math.sin(a)*30,{}).pingUntil=sonarNow()+PING_HOLD;
   toast('🪝 Een verse mosselbank verschijnt vlakbij!','good'); renderHarbor(); updateHUD(); };
-window.__repair=()=>{ if(W.gold<40)return; W.gold-=40; toast('🛠️ Schip blinkt weer als nieuw!','good'); renderHarbor(); updateHUD(); };
+window.__repair=()=>{ if(W.gold<40)return; W.gold-=40; W.hull=W.hullMax;
+  toast('🛠️ Romp volledig hersteld!','good'); renderHarbor(); updateHUD(); };
 window.__buyWeatherFuel=()=>{ if(W.gold<120||!W.hasWeatherMachine)return; W.gold-=120; setWeather(pick(['clear','clear','cloudy']),true);
   toast('🌦️ Weersmachine: het weer klaart op!','good'); renderHarbor(); updateHUD(); };
 window.__upg=(k,price)=>{
@@ -2302,7 +2339,7 @@ function drawBigMap(){
   }
 
   // ---- points of interest ----
-  for(const b of beds){ if(b.known) dot(sx(b.x),sy(b.z), b.golden?3.5:2.5, b.golden?'#ffd34d':'#5bd97a'); }
+  for(const b of beds){ if(bedVisible(b)) dot(sx(b.x),sy(b.z), b.golden?3.5:2.5, b.golden?'#ffd34d':'#5bd97a'); }
   for(const bt of bottles){ const x=sx(bt.x), y=sy(bt.z); ctx.fillStyle='#9affc8'; ctx.beginPath(); ctx.moveTo(x,y-5); ctx.lineTo(x+4,y+3); ctx.lineTo(x-4,y+3); ctx.closePath(); ctx.fill(); }
   for(const s of sailors){ const x=sx(s.x), y=sy(s.z); ctx.strokeStyle='#ff6b6b'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(x-5,y); ctx.lineTo(x+5,y); ctx.moveTo(x,y-5); ctx.lineTo(x,y+5); ctx.stroke(); }
 
@@ -2358,7 +2395,7 @@ function drawSonar(){
     const [px,py]=toR(dx,dz);
     sctx.fillStyle=color; sctx.beginPath(); sctx.arc(px,py,size,0,6.28); sctx.fill();
   }
-  for(const b of beds){ if(b.known||dist2(b.x,b.z,shipState.x,shipState.z)<(range*0.6)**2) blip(b.x,b.z, b.golden?'#ffd34d':'#5bd97a', b.golden?4:3); }
+  for(const b of beds){ if(bedVisible(b)) blip(b.x,b.z, b.golden?'#ffd34d':'#5bd97a', b.golden?4:3); }
   for(const h of harborMarkers) blip(h.x,h.z,'#ff9d4d',4);
   if(kraken.known && kraken.state!=='gone'){ const big=krakenActive(); blip(kraken.x,kraken.z, big?'#ff3355':'#b95fd0', big?(6+Math.sin(oceanUniforms.uTime.value*8)*2):4); }
   if(serpent.state!=='gone' && serpent.state!=='dying'){ const agro=serpentActive(); blip(serpent.x,serpent.z, agro?'#ff5a3d':'#3fd9a8', agro?(5+Math.sin(oceanUniforms.uTime.value*8)*2):3.5); }
@@ -2910,6 +2947,7 @@ function makeCloudTexture(){
 //  21. PAUSE
 // ============================================================================
 function togglePause(){
+  if(W.dead) return;                                          // the run is over
   if($('overlay').style.display==='flex' && !mapOpen) return; // a modal handles its own pause
   W.paused=!W.paused;
   if(W.paused){ openModal(`<h2>⏸️ Pauze</h2><div class="sub">Dag ${W.day} · ${$('clock').textContent} · ${WEATHERS[W.weather].name}</div>
@@ -2938,7 +2976,8 @@ function openManual(){
       <div class="card2"><h3>🕹️ Besturing</h3><p>${IS_TOUCH
         ? 'Vaar met de <b>joystick</b> (linksonder). <b>⚡ Boost</b> vasthouden voor extra snelheid. <b>🦪 Vang</b> vasthouden bij een bank. <b>📡 Sonar</b> en <b>⚓ Actie</b> tikken. Knoppen rechtsboven: kaart 🗺️, werf 🔧, camera 📷, meeuw 🐦, pauze ⏸️. Sleep met een tweede vinger over het water om rond te kijken.'
         : `${key('W')}${key('S')} gas/achteruit · ${key('A')}${key('D')} sturen · ${key('Shift')} boost · ${key('F')} sonar · ${key('Spatie')} vangen · ${key('E')} actie/aanmeren · ${key('H')} harpoen · ${key('C')} camera · ${key('M')} kaart · ${key('U')} werf · ${key('G')} meeuw · ${key('P')} pauze. Sleep met de muis om rond te kijken.`}</p></div>
-      <div class="card2"><h3>🦪 Vangen & koken</h3><p>Ping met de sonar om mosselbanken te vinden. Vaar erheen, houd <b>${IS_TOUCH?'🦪 Vang':'Spatie'}</b> vast tot je ruim vol is. Meer aan in een haven, open de <b>Kombuis</b> en kook met perfecte timing hoe beter je timing, hoe waardevoller het gerecht.</p></div>
+      <div class="card2"><h3>🦪 Vangen & koken</h3><p>Ping met de <b>${IS_TOUCH?'📡 Sonar':'F'}</b> om mosselbanken te vinden. Een echo blijft maar korte tijd op je scherm staan, dus ping regelmatig opnieuw. Vaar erheen, houd <b>${IS_TOUCH?'🦪 Vang':'Spatie'}</b> vast tot je ruim vol is. Meer aan in een haven, open de <b>Kombuis</b> en kook met perfecte timing: hoe beter je timing, hoe waardevoller het gerecht.</p></div>
+      <div class="card2"><h3>🛡️ Romp & overleven</h3><p>Je <b>romp</b> staat in de balk bovenin. Monsters slaan er stukken uit; buiten gevechten herstelt hij langzaam vanzelf. Koop <b>Onderhoud</b> op de werf om hem in één keer volledig te repareren. Loopt je romp leeg, dan <b>zink je en ben je je voortgang kwijt</b>. Vlucht dus op tijd!</p></div>
       <div class="card2"><h3>🌊 De open zee</h3><p>Ontdek verborgen eilanden met schatten 🏴‍☠️, red gestrande zeelieden ⛑️, vang exotische dieren voor je aquarium 🐠, vind gouden mosselen 🌟 en flessenpost met missies 📜. Let op het weer en de dag-/nachtcyclus.</p></div>
       <div class="card2" style="grid-column:1/-1"><h3>🐙 Zeemonsters: waar en wanneer</h3>
         <p>Koop eerst het <b>🔱 Harpoenkanon</b> op de werf (1500). Grotere schepen hebben meer vuurkracht en een sterkere romp.</p>
@@ -2982,7 +3021,7 @@ function serializeSave(){
   };
 }
 function saveGame(){
-  if(!W.started) return;
+  if(!W.started || W.dead) return;      // a sunk run must not be written back
   try{ localStorage.setItem(SAVE_KEY, JSON.stringify(serializeSave())); }
   catch(e){ /* private mode / quota ignore */ }
 }
@@ -3068,7 +3107,7 @@ function startGame(){
 $('playBtn').addEventListener('click',startGame);
 
 // Unified close: floating ✕ + tap/click on the dark backdrop close whatever modal is open.
-function closeAnyModal(){ if(mapOpen) window.__closemap(); else closeModal(); }
+function closeAnyModal(){ if(W.dead) return; if(mapOpen) window.__closemap(); else closeModal(); }
 window.__closeAny=closeAnyModal;
 $('overlayClose').addEventListener('click',closeAnyModal);
 $('overlay').addEventListener('click',e=>{ if(e.target===$('overlay')) closeAnyModal(); });
@@ -3092,6 +3131,9 @@ window.serpent=serpent; window.serpentHit=serpentHit; window.ghost=ghost; window
 window.crab=crab; window.crabHit=crabHit; window.beginCrabSiege=beginCrabSiege; window.weaponDamage=weaponDamage;
 window.getShipMesh=()=>shipMesh;
 window.music=music; window.mapView=mapView; window.drawBigMap=drawBigMap;
+window.sonarPing=sonarPing; window.bedVisible=bedVisible; window.sonarNow=sonarNow;
+window.oceanUniforms=oceanUniforms; window.damageHull=damageHull; window.sinkShip=sinkShip;
+window.toast=toast;
 
 // Restore a previous save (if any) and adjust the title screen accordingly
 if(hasSave()){
