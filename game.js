@@ -2536,10 +2536,21 @@ function stepSim(dt){
   const windAmt = wm.wave*0.35*Math.min(1, Math.abs(shipState.speed)/6);
   shipState.x += (Math.sin(shipState.heading)*shipState.speed + W.wind.x*windAmt)*dt;
   shipState.z += (Math.cos(shipState.heading)*shipState.speed + W.wind.y*windAmt)*dt;
-  // clamp to world
+  // ---- wrap the world: sail off one edge and reappear on the other ----
+  // The camera is shifted by the same amount, so the water stays seamless and
+  // only the distant land tells you that you have crossed the meridian.
   const lim=2900;
-  shipState.x=Math.max(-lim,Math.min(lim,shipState.x));
-  shipState.z=Math.max(-lim,Math.min(lim,shipState.z));
+  let wrapX=0, wrapZ=0;
+  if(shipState.x >  lim) wrapX = -2*lim;
+  else if(shipState.x < -lim) wrapX =  2*lim;
+  if(shipState.z >  lim) wrapZ = -2*lim;
+  else if(shipState.z < -lim) wrapZ =  2*lim;
+  if(wrapX || wrapZ){
+    shipState.x += wrapX; shipState.z += wrapZ;
+    camPos.x += wrapX;    camPos.z += wrapZ;     // keep the view glued to the ship
+    for(const h of harpoons){ h.x += wrapX; h.z += wrapZ; }
+    toast('🧭 Je bent de meridiaan overgestoken naar de andere kant van de oceaan.');
+  }
 
   // ---- island & harbour-land collision: slide along the shore, never get stuck ----
   const pushOut=(cx,cz,minD)=>{
@@ -2569,11 +2580,11 @@ function stepSim(dt){
   // The hull always rides the swell; lying still it keeps a slow, easy roll
   // so the boat never looks frozen while you are dredging.
   const idle = 1 - Math.min(1, Math.abs(shipState.speed)/10);   // 1 when stopped
-  ship.position.set(shipState.x, h0*1.5 + 0.2 + Math.sin(t*0.85)*0.3*idle, shipState.z);
+  ship.position.set(shipState.x, h0*1.5 + 0.2 + Math.sin(t*0.9)*0.85*idle, shipState.z);
   ship.rotation.y=shipState.heading;
-  // pitch & roll from wave slope, plus a gentle idle rock
-  shipMesh.rotation.x = Math.atan2(hF-h0,3)*-1.4 + Math.sin(t*0.8)*0.04*idle;
-  shipMesh.rotation.z = Math.atan2(hR-h0,2)*1.4  + Math.sin(t*0.62)*0.07*idle;
+  // pitch & roll from wave slope, plus a clearly visible idle rock
+  shipMesh.rotation.x = Math.atan2(hF-h0,3)*-1.4 + Math.sin(t*0.95)*0.10*idle;
+  shipMesh.rotation.z = Math.atan2(hR-h0,2)*1.4  + Math.sin(t*0.70)*0.19*idle;
   // flag waves
   if(shipMesh.userData.flag) shipMesh.userData.flag.rotation.y=Math.sin(t*4)*0.3 + W.wind.x;
   if(shipMesh.userData.ring) shipMesh.userData.ring.rotation.z+=dt*2;
