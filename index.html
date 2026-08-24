@@ -138,6 +138,11 @@
   .btn.sell{background:var(--good);color:#04210f}
   .closeX{position:sticky;float:right;top:0;background:rgba(255,255,255,.1);border:none;color:var(--ink);width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:18px}
   .price{color:var(--gold);font-weight:bold}
+  /* on a gold or green button the gold price was invisible: use dark ink there */
+  .btn .price{color:#5a3d00}
+  .btn.sell .price{color:#04210f}
+  .btn.alt .price{color:var(--gold)}
+  .btn:disabled .price{color:#8fa6bd}
   .lvltag{font-size:11px;background:rgba(67,198,255,.2);border:1px solid var(--line);border-radius:6px;padding:1px 7px;color:var(--accent)}
   .invrow{display:flex;justify-content:space-between;padding:7px 4px;border-bottom:1px solid rgba(255,255,255,.07);font-size:14px;align-items:center}
   .invrow:last-child{border:none}

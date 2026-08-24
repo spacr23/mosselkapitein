@@ -435,8 +435,34 @@ function buildShip(){
   shipMesh.add(cap);
   shipMesh.userData.captain=cap; shipMesh.userData.rifle=rifle; shipMesh.userData.muzzle=muzzle;
 
+  // ----- navigation & deck lights (switched on automatically after dark) -----
+  const lamps=[];
+  const lampMat=(col,emis)=>new THREE.MeshStandardMaterial({color:col, emissive:emis, emissiveIntensity:0, roughness:.35});
+  const mkLamp=(col,emis,x,y,z,r=0.32)=>{
+    const m=new THREE.Mesh(new THREE.SphereGeometry(r,8,8), lampMat(col,emis));
+    m.position.set(x,y,z); shipMesh.add(m); lamps.push(m); return m;
+  };
+  mkLamp(0xff5a4d,0xff2a1a, -2.1, 2.0,  1.2);   // port (red)
+  mkLamp(0x5bff8a,0x1aff5a,  2.1, 2.0,  1.2);   // starboard (green)
+  mkLamp(0xffffff,0xffe9a8,  0.0, 7.2, -1.2, 0.28); // masthead
+  mkLamp(0xffe0a0,0xffb040,  0.0, 2.6, -3.6, 0.30); // stern / deck lamp
+  // one real light so the deck actually glows at night
+  const deckLight=new THREE.PointLight(0xffd9a0, 0, 34, 2);
+  deckLight.position.set(0,4.2,0); shipMesh.add(deckLight);
+  shipMesh.userData.lamps=lamps; shipMesh.userData.deckLight=deckLight;
+  // cabin window can glow too
+  shipMesh.userData.win=win;
+
   shipMesh.scale.setScalar(s);
   ship.add(shipMesh);
+}
+// Fade the ship's lights in as dusk falls (0 = broad daylight, 1 = full dark)
+function updateShipLights(nightAmt){
+  if(!shipMesh) return;
+  const ud=shipMesh.userData;
+  if(ud.lamps) for(const m of ud.lamps) m.material.emissiveIntensity = 1.6*nightAmt;
+  if(ud.deckLight) ud.deckLight.intensity = 1.5*nightAmt;
+  if(ud.win) ud.win.material.emissiveIntensity = 0.25 + 1.2*nightAmt;
 }
 const shipState = { heading:0, speed:0, throttle:0, x:0, z:0 };
 buildShip();
@@ -1182,7 +1208,7 @@ const ghost = { group:new THREE.Group(), state:'hidden', x:0, z:0, heading:0, fa
   g.visible=false; scene.add(g);
 })();
 
-function isNight(){ return W.time>=21 || W.time<5; }
+function isNight(){ return W.time>=DUSK || W.time<DAWN; }   // matches the sun's arc
 function nearbyGhost(){ return (ghost.state==='sailing' && ghost.fade>0.5 &&
   dist2(ghost.x,ghost.z,shipState.x,shipState.z)<45*45) ? ghost : null; }
 function lootGhost(){
@@ -2467,6 +2493,8 @@ function update(){
 }
 
 function stepSim(dt){
+  // ---- wave clock (this drives the swell, the hull's bob and sonar echoes) ----
+  oceanUniforms.uTime.value += dt;
   // ---- time of day ----
   W.time += dt*0.12; // ~ 1 day per ~3.3 real min
   if(W.time>=24){ W.time-=24; W.day++;
@@ -2538,11 +2566,14 @@ function stepSim(dt){
   const h0=waveHeight(shipState.x,shipState.z,t,sc);
   const hF=waveHeight(shipState.x+Math.sin(shipState.heading)*3, shipState.z+Math.cos(shipState.heading)*3, t, sc);
   const hR=waveHeight(shipState.x+Math.cos(shipState.heading)*2, shipState.z-Math.sin(shipState.heading)*2, t, sc);
-  ship.position.set(shipState.x, h0+0.2, shipState.z);
+  // The hull always rides the swell; lying still it keeps a slow, easy roll
+  // so the boat never looks frozen while you are dredging.
+  const idle = 1 - Math.min(1, Math.abs(shipState.speed)/10);   // 1 when stopped
+  ship.position.set(shipState.x, h0*1.5 + 0.2 + Math.sin(t*0.85)*0.3*idle, shipState.z);
   ship.rotation.y=shipState.heading;
-  // pitch & roll from wave slope
-  shipMesh.rotation.x = Math.atan2(hF-h0,3)*-1.0;
-  shipMesh.rotation.z = Math.atan2(hR-h0,2)*1.0;
+  // pitch & roll from wave slope, plus a gentle idle rock
+  shipMesh.rotation.x = Math.atan2(hF-h0,3)*-1.4 + Math.sin(t*0.8)*0.04*idle;
+  shipMesh.rotation.z = Math.atan2(hR-h0,2)*1.4  + Math.sin(t*0.62)*0.07*idle;
   // flag waves
   if(shipMesh.userData.flag) shipMesh.userData.flag.rotation.y=Math.sin(t*4)*0.3 + W.wind.x;
   if(shipMesh.userData.ring) shipMesh.userData.ring.rotation.z+=dt*2;
@@ -2609,13 +2640,23 @@ function stepSim(dt){
   $('windInfo').textContent='🧭 Wind: '+headingName(Math.atan2(W.wind.x,W.wind.y))+' '+(8+Math.round(WEATHERS[W.weather].wave*6))+'kn';
 }
 
+// Map the clock onto the sun's arc, giving daylight a bigger share of the day.
+const DAWN=5, DUSK=21;                       // 16 h light, 8 h dark
+function solarPhase(time){
+  if(time>=DAWN && time<DUSK) return (time-DAWN)/(DUSK-DAWN)*Math.PI;   // above horizon
+  const nightLen=24-(DUSK-DAWN);
+  const t2 = time>=DUSK ? time-DUSK : time+24-DUSK;
+  return Math.PI + (t2/nightLen)*Math.PI;                               // below horizon
+}
 function applyEnvironment(dt){
   const wm=WEATHERS[W.weather];
   // smooth wave scale
   const targetWave=wm.wave;
   oceanUniforms.uWaveScale.value += (targetWave-oceanUniforms.uWaveScale.value)*Math.min(1,dt*0.7);
-  // sun position from time of day
-  const ang=(W.time/24)*Math.PI*2 - Math.PI/2; // sunrise ~6
+  // sun position from time of day. Daylight is stretched over 16 of the 24
+  // hours (sunrise 05:00, sunset 21:00) so the world is bright far more often
+  // than it is dark; night is compressed into the remaining 8 hours.
+  const ang=solarPhase(W.time);
   const sunY=Math.sin(ang), sunX=Math.cos(ang)*0.6, sunZ=0.3;
   const dir=new THREE.Vector3(sunX,Math.max(sunY,-0.3),sunZ).normalize();
   const dayAmt=Math.max(0,sunY);             // 0 night, 1 noon
@@ -2653,6 +2694,7 @@ function applyEnvironment(dt){
   oceanUniforms.uSunColor.value.copy(sun.color);
   oceanUniforms.uSky.value.copy(bot);
   oceanUniforms.uNight.value=night;
+  updateShipLights(night);        // ship lamps fade in as it gets dark
   oceanUniforms.uSunStrength.value=wm.sun*(0.4+dayAmt);
   const deep=new THREE.Color(0x05335e).lerp(wt,(1-wm.sun)*0.3);
   oceanUniforms.uDeep.value.copy(deep);
