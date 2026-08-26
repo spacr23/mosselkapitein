@@ -1812,7 +1812,6 @@ function updateHUD(){
   $('seagullStat').style.display=W.hasSeagull?'flex':'none';
   $('seagullName').textContent=W.seagullName;
 }
-let toastTimer=0;
 function toast(msg,kind=''){
   const t=$('toasts');
   // don't stack the same message: refresh the existing one and count repeats
@@ -2980,7 +2979,6 @@ function toggleMusic(){
   refreshMusicBtn();
 }
 function refreshMusicBtn(){ const b=$('ubMusic'); if(b) b.textContent = music.on?'🎵':'🔇'; }
-window.__toggleMusic=toggleMusic;
 try{ if(localStorage.getItem('mosselkapitein_music')==='0') music.on=false; }catch(e){}
 
 // ============================================================================
@@ -3161,7 +3159,6 @@ $('playBtn').addEventListener('click',startGame);
 
 // Unified close: floating ✕ + tap/click on the dark backdrop close whatever modal is open.
 function closeAnyModal(){ if(W.dead) return; if(mapOpen) window.__closemap(); else closeModal(); }
-window.__closeAny=closeAnyModal;
 $('overlayClose').addEventListener('click',closeAnyModal);
 $('overlay').addEventListener('click',e=>{ if(e.target===$('overlay')) closeAnyModal(); });
 
