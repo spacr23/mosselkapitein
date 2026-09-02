@@ -720,6 +720,52 @@ const floes=[];
   }
 }
 
+// ---- aurora borealis: shimmering curtains high above the IJszee at night ----
+const auroras=[];
+{
+  const mkAurora=(phase)=>new THREE.ShaderMaterial({
+    uniforms:{ uTime:{value:0}, uOpacity:{value:0}, uPhase:{value:phase} },
+    vertexShader:`
+      uniform float uTime,uPhase; varying vec2 vUv;
+      void main(){
+        vUv=uv;
+        vec3 p=position;
+        p.x += sin(uv.x*5.0 + uTime*0.4 + uPhase)*36.0*uv.y;   // slow sway, wider at the top
+        p.z += cos(uv.x*3.0 + uTime*0.3 + uPhase)*24.0*uv.y;
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
+      }`,
+    fragmentShader:`
+      precision highp float;
+      uniform float uTime,uOpacity,uPhase; varying vec2 vUv;
+      void main(){
+        float bands = 0.5 + 0.5*sin(vUv.x*46.0 + uTime*0.7 + uPhase + sin(vUv.x*7.0 + uTime*0.33)*2.6);
+        bands = pow(bands, 1.6);
+        float fade = pow(1.0-vUv.y, 1.4) * smoothstep(0.0, 0.06, vUv.y);
+        vec3 col = mix(vec3(0.15,1.0,0.55), vec3(0.55,0.30,0.95), vUv.y*1.2);
+        float a = bands * fade * uOpacity;
+        gl_FragColor = vec4(col*a, a);
+      }`,
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+  });
+  for(let i=0;i<3;i++){
+    const mat=mkAurora(i*2.1);
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(2000,300,64,1), mat);
+    m.position.set(-800+i*850, 330+i*40, -2450-i*160);
+    m.rotation.y=(i-1)*0.18;
+    m.frustumCulled=false; m.visible=false;
+    scene.add(m); auroras.push(m);
+  }
+}
+function updateAurora(dt,night){
+  const on = night>0.05;
+  for(const a of auroras){
+    a.visible=on;
+    if(!on) continue;
+    a.material.uniforms.uTime.value += dt;
+    a.material.uniforms.uOpacity.value = night*0.85;
+  }
+}
+
 // ---- ambient gulls circling islands & harbours (life in the world) ----
 const ambientGulls=[];
 {
@@ -2032,8 +2078,12 @@ function tabVerkoop(h){
     ${W.buffs.prijs?'<div class="sub" style="color:var(--gold)">🌟 Prijsbonus actief!</div>':''}`;
 }
 function invRow(label,count,price,fn,extra=''){
-  return `<div class="invrow"><span>${label} <b style="color:var(--accent)">×${count}</b> <small style="color:var(--muted)">${extra}</small></div>
-    <div><span class="price">${price} 🪙</span> <button class="btn sell" ${count<=0?'disabled':''} onclick="${fn()}">Verkoop 1</button></div></div>`;
+  return `<div class="invrow">
+    <span>${label} <b style="color:var(--accent)">×${count}</b> <small style="color:var(--muted)">${extra}</small></span>
+    <span style="white-space:nowrap;display:inline-flex;align-items:center;gap:8px">
+      <span class="price">${price} 🪙</span>
+      <button class="btn sell" ${count<=0?'disabled':''} onclick="${fn()}">Verkoop 1</button>
+    </span></div>`;
 }
 function tabMarkt(h){
   // buy bait/charts/aquariumfish? Keep simple: buy fuel-free; sell-side mostly. Add: sea charts reveal beds, weather machine fuel.
@@ -2133,12 +2183,16 @@ window.__sellAll=()=>{
   const mp=musselPrice(curHarbor);
   let tot = W.inv.mossel*mp + W.inv.goudmossel*mp*8 + W.inv.exoot*60
     + W.inv.zalm*productPrice('zalm',curHarbor) + W.inv.parel*productPrice('parel',curHarbor)
-    + W.inv.inktvis*productPrice('inktvis',curHarbor);
+    + W.inv.inktvis*productPrice('inktvis',curHarbor)
+    + W.inv.krakeninkt*220 + W.inv.schub*150 + W.inv.schaar*180;
   if(tot<=0) return;
   if(W.inv.parel>0 && curHarbor.biome==='storm') W.parelInIJszee=true;
+  const items=W.inv.mossel+W.inv.goudmossel+W.inv.exoot+W.inv.zalm+W.inv.parel+W.inv.inktvis
+    +W.inv.krakeninkt+W.inv.schub+W.inv.schaar;
   W.totalEarned+=tot; W.gold+=tot;
-  gainSkill('handel', (W.inv.mossel+W.inv.goudmossel+W.inv.exoot+W.inv.zalm+W.inv.parel+W.inv.inktvis)*0.5);
+  gainSkill('handel', items*0.5);
   W.inv.mossel=0; W.inv.goudmossel=0; W.inv.exoot=0; W.inv.zalm=0; W.inv.parel=0; W.inv.inktvis=0;
+  W.inv.krakeninkt=0; W.inv.schub=0; W.inv.schaar=0;
   toast(`💰 Alles verkocht voor ${Math.floor(tot)} 🪙`,'good'); beep(720,.08);
   renderHarbor(); updateHUD(); checkQuests();
 };
@@ -2878,6 +2932,7 @@ function applyEnvironment(dt){
   oceanUniforms.uSky.value.copy(bot);
   oceanUniforms.uNight.value=night;
   updateShipLights(night);        // ship lamps fade in as it gets dark
+  updateAurora(dt,night);         // noorderlicht boven de IJszee
   oceanUniforms.uSunStrength.value=wm.sun*(0.4+dayAmt);
   // each sea has its own water colour; blend toward it as you cross over
   const WATER_TINTS={
