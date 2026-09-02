@@ -347,6 +347,21 @@
   if('serviceWorker' in navigator){
     addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
   }
+  // Watchdog: if the game module hasn't come alive within 8s (e.g. a broken
+  // cached game.js), wipe this device's caches and reload once to self-heal.
+  setTimeout(async()=>{
+    if(window.gameLoaded) return;
+    try{
+      if(sessionStorage.getItem('mk_heal')) return;   // only try once per visit
+      sessionStorage.setItem('mk_heal','1');
+      if(navigator.serviceWorker){
+        const rs=await navigator.serviceWorker.getRegistrations();
+        for(const r of rs) await r.unregister();
+      }
+      if(window.caches){ const ks=await caches.keys(); for(const k of ks) await caches.delete(k); }
+      location.reload();
+    }catch(e){}
+  }, 8000);
 </script>
 </body>
 </html>

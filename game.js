@@ -158,7 +158,7 @@ const OCEAN_SIZE = 6400;
 const OCEAN_SEG = IS_MOBILE ? 200 : 360;
 const oceanGeo = new THREE.PlaneGeometry(OCEAN_SIZE, OCEAN_SIZE, OCEAN_SEG, OCEAN_SEG);
 oceanGeo.rotateX(-Math.PI/2);
-const LAND_MAX = 20;   // island + harbour discs that tint the shallows (filled after world build)
+const LAND_MAX = 30;   // island/harbour/reef discs that tint the shallows (filled after world build)
 const oceanUniforms = {
   uTime:{value:0}, uWaveScale:{value:1.0},
   uSunDir:{value:new THREE.Vector3(0,1,0)}, uSunColor:{value:new THREE.Color(0xfff0c8)},
@@ -794,11 +794,64 @@ function updateAmbientGulls(dt,t){
   }
 }
 
-// feed island + harbour land discs to the water shader (turquoise shallows & surf)
+// ---- coral reefs in the Parelzee: beautiful, shallow and rough on the hull ----
+const reefs=[];
+{
+  const CORAL_COLS=[0xff7f6a,0xff9d4d,0xd867a0,0x9a5ade,0x4dd0c1,0xf2e06a];
+  const clearOf=(x,z)=>{
+    for(const i of ISLANDS)  if(dist2(x,z,i.x,i.z)<(i.r+55)**2) return false;
+    for(const h of HARBORS)  if(dist2(x,z,h.x,h.z)<((h.r||40)*2+70)**2) return false;
+    for(const rf of reefs)   if(dist2(x,z,rf.x,rf.z)<130*130) return false;
+    return true;
+  };
+  let tries=0;
+  while(reefs.length<10 && tries++<300){
+    const x=1150+Math.random()*1500, z=-700+Math.random()*3300;
+    if(biomeAt(x,z)!=='tropisch' || !clearOf(x,z)) continue;
+    const r=9+Math.random()*7;
+    const g=new THREE.Group();
+    // sandy shoal just under the surface
+    const shoal=new THREE.Mesh(new THREE.SphereGeometry(r,20,12,0,Math.PI*2,0,Math.PI*0.5),
+      new THREE.MeshStandardMaterial({color:0xd9c6a0,roughness:.95}));
+    shoal.scale.y=0.25; shoal.position.y=-1.6; g.add(shoal);
+    // coral heads poking through the water
+    const n=9+Math.floor(Math.random()*5);
+    for(let i=0;i<n;i++){
+      const a=Math.random()*6.28, rr=Math.random()*r*0.8;
+      const col=CORAL_COLS[Math.floor(Math.random()*CORAL_COLS.length)];
+      const kind=Math.random();
+      let m;
+      if(kind<0.45){        // branching coral
+        m=new THREE.Mesh(new THREE.ConeGeometry(0.6+Math.random()*0.5, 2.8+Math.random()*2.0, 5),
+          new THREE.MeshStandardMaterial({color:col,roughness:.7,flatShading:true}));
+      } else if(kind<0.75){ // brain coral
+        m=new THREE.Mesh(new THREE.SphereGeometry(1.2+Math.random()*1.0, 8, 6),
+          new THREE.MeshStandardMaterial({color:col,roughness:.85,flatShading:true}));
+        m.scale.y=0.7;
+      } else {              // fan coral
+        m=new THREE.Mesh(new THREE.PlaneGeometry(2.4+Math.random()*1.2,1.9+Math.random()),
+          new THREE.MeshStandardMaterial({color:col,roughness:.8,side:THREE.DoubleSide}));
+        m.rotation.y=Math.random()*6.28;
+      }
+      // sit on top of the sand dome and poke clearly above the water
+      const domeY=Math.sqrt(Math.max(0, r*r-rr*rr))*0.25 - 1.6;
+      m.position.set(Math.cos(a)*rr, Math.max(0.4, domeY+0.6+Math.random()*0.8), Math.sin(a)*rr);
+      m.rotation.z=(Math.random()-0.5)*0.4;
+      g.add(m);
+    }
+    g.position.set(x,0,z);
+    scene.add(g);
+    reefs.push({x,z,r,group:g});
+  }
+}
+let reefToastCd=0;
+
+// feed island + harbour + reef discs to the water shader (turquoise shallows & surf)
 {
   let li=0;
   for(const isl of ISLANDS){ if(li<LAND_MAX) oceanUniforms.uLand.value[li++].set(isl.x, isl.z, isl.r); }
   for(const c of harborCores){ if(li<LAND_MAX) oceanUniforms.uLand.value[li++].set(c.x, c.z, c.r); }
+  for(const rf of reefs){ if(li<LAND_MAX) oceanUniforms.uLand.value[li++].set(rf.x, rf.z, rf.r*1.7); }
 }
 
 // ---- mussel beds (dynamic) ----
@@ -881,6 +934,13 @@ function seedBeds(n){
   }
 }
 seedBeds(100);
+// pearl oysters like the shelter of a reef
+for(const rf of reefs){
+  if(Math.random()<0.6){
+    const a=Math.random()*6.28, d=rf.r+10+Math.random()*12;
+    spawnBed(rf.x+Math.cos(a)*d, rf.z+Math.sin(a)*d, {kind:'parel'});
+  }
+}
 
 // ---- floating points of interest: bottles, stranded sailors, exotic fish ----
 const bottles=[], sailors=[], exotics=[];
@@ -2451,7 +2511,7 @@ function openMap(){
       <button class="btn alt" style="padding:6px 14px" onclick="window.__mapReset()">Hele kaart</button>
     </div>
     <div class="sub" style="margin-top:10px;display:flex;flex-wrap:wrap;row-gap:4px">
-      ${chip('#ff9d4d','haven','■')}${chip('#8fcf7a','eiland')}${chip('#ffd34d','schat','★')}${chip('#5bd97a','mosselbank','·')}${chip('#ffd34d','gouden bank','·')}${chip('#cfe0ec','zalmschool','·')}${chip('#ffb6d9','parelbank','·')}${chip('#b06bff','inktvis (nacht)','·')}
+      ${chip('#ff9d4d','haven','■')}${chip('#8fcf7a','eiland')}${chip('#ffd34d','schat','★')}${chip('#5bd97a','mosselbank','·')}${chip('#ffd34d','gouden bank','·')}${chip('#cfe0ec','zalmschool','·')}${chip('#ffb6d9','parelbank','·')}${chip('#b06bff','inktvis (nacht)','·')}${chip('#ff8a7a','koraalrif','○')}
       ${chip('#9affc8','flessenpost','▲')}${chip('#ff6b6b','zeeman','✚')}${chip('#ff5a7a','monster','◆')}
     </div>`);
   setupMapInput();
@@ -2568,6 +2628,7 @@ function drawBigMap(){
   }
 
   // ---- points of interest ----
+  for(const rf of reefs){ ctx.strokeStyle='#ff8a7a'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(sx(rf.x),sy(rf.z),4,0,6.283); ctx.stroke(); }
   for(const b of beds){ if(bedVisible(b) && bedActive(b)) dot(sx(b.x),sy(b.z), b.golden?3.5:2.5, bedColor(b)); }
   for(const bt of bottles){ const x=sx(bt.x), y=sy(bt.z); ctx.fillStyle='#9affc8'; ctx.beginPath(); ctx.moveTo(x,y-5); ctx.lineTo(x+4,y+3); ctx.lineTo(x-4,y+3); ctx.closePath(); ctx.fill(); }
   for(const s of sailors){ const x=sx(s.x), y=sy(s.z); ctx.strokeStyle='#ff6b6b'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(x-5,y); ctx.lineTo(x+5,y); ctx.moveTo(x,y-5); ctx.lineTo(x,y+5); ctx.stroke(); }
@@ -2774,6 +2835,16 @@ function stepSim(dt){
   };
   for(const isl of islandMeshes) pushOut(isl.x, isl.z, isl.r+6);     // beach edge + hull margin
   for(const c of harborCores)    pushOut(c.x,   c.z,   c.r+6);       // harbour land (pier stays clear)
+  // coral scrapes the hull's pace out of you (but never sinks you)
+  reefToastCd=Math.max(0,reefToastCd-dt);
+  for(const rf of reefs){
+    if(dist2(shipState.x,shipState.z,rf.x,rf.z) < rf.r*rf.r){
+      shipState.speed*=Math.max(0,1-2.4*dt);
+      if(reefToastCd<=0){ toast('🪸 Je schuurt over het koraalrif! Vaar er omheen.','bad'); reefToastCd=6;
+        splash(shipState.x,shipState.z); beep(220,.08,0.03); }
+      break;
+    }
+  }
 
   // ---- float ship on waves ----
   const t=oceanUniforms.uTime.value, sc=oceanUniforms.uWaveScale.value;
@@ -3272,7 +3343,7 @@ function openManual(){
         : `${key('W')}${key('S')} gas/achteruit · ${key('A')}${key('D')} sturen · ${key('Shift')} boost · ${key('F')} sonar · ${key('Spatie')} vangen · ${key('E')} actie/aanmeren · ${key('H')} harpoen · ${key('C')} camera · ${key('M')} kaart · ${key('U')} werf · ${key('G')} meeuw · ${key('P')} pauze. Sleep met de muis om rond te kijken.`}</p></div>
       <div class="card2"><h3>🦪 Vangen & koken</h3><p>Ping met de <b>${IS_TOUCH?'📡 Sonar':'F'}</b> om mosselbanken te vinden. Een echo blijft maar korte tijd op je scherm staan, dus ping regelmatig opnieuw. Vaar erheen, houd <b>${IS_TOUCH?'🦪 Vang':'Spatie'}</b> vast tot je ruim vol is. Meer aan in een haven, open de <b>Kombuis</b> en kook met perfecte timing: hoe beter je timing, hoe waardevoller het gerecht.</p></div>
       <div class="card2"><h3>🛡️ Romp & overleven</h3><p>Je <b>romp</b> staat in de balk bovenin. Monsters slaan er stukken uit; buiten gevechten herstelt hij langzaam vanzelf. Koop <b>Onderhoud</b> op de werf om hem in één keer volledig te repareren. Loopt je romp leeg, dan <b>zink je en ben je je voortgang kwijt</b>. Vlucht dus op tijd!</p></div>
-      <div class="card2"><h3>🧭 De Vier Zeeën</h3><p>Elke hoek van de oceaan heeft eigen vangst: <b>❄️ IJszee</b> (noord) met zwemmende <b>zalmscholen</b>, <b>🏝️ Parelzee</b> (oost) met kostbare <b>pareloesters</b>, <b>🌫️ Schemerzee</b> (west) met <b>inktvis die alleen bij nacht</b> opduikt, en de vertrouwde mosselbanken aan de kust. Vang het ver weg en verkoop het aan de andere kant van de kaart voor de beste prijs!</p></div>
+      <div class="card2"><h3>🧭 De Vier Zeeën</h3><p>Elke hoek van de oceaan heeft eigen vangst: <b>❄️ IJszee</b> (noord) met zwemmende <b>zalmscholen</b>, <b>🏝️ Parelzee</b> (oost) met kostbare <b>pareloesters</b> die vaak vlak bij de <b>koraalriffen</b> liggen (pas op: koraal schuurt je vaart eruit, vaar er omheen), <b>🌫️ Schemerzee</b> (west) met <b>inktvis die alleen bij nacht</b> opduikt, en de vertrouwde mosselbanken aan de kust. Vang het ver weg en verkoop het aan de andere kant van de kaart voor de beste prijs!</p></div>
       <div class="card2"><h3>🌊 De open zee</h3><p>Ontdek verborgen eilanden met schatten 🏴‍☠️, red gestrande zeelieden ⛑️, vang exotische dieren voor je aquarium 🐠, vind gouden mosselen 🌟 en flessenpost met missies 📜. Let op het weer en de dag-/nachtcyclus.</p></div>
       <div class="card2" style="grid-column:1/-1"><h3>🐙 Zeemonsters: waar en wanneer</h3>
         <p>Koop eerst het <b>🔱 Harpoenkanon</b> op de werf (1500). Grotere schepen hebben meer vuurkracht en een sterkere romp.</p>
@@ -3453,3 +3524,4 @@ if(loadedFromSave){
 // Kick off loop
 $('loadNote').textContent = loadedFromSave ? '✅ Opgeslagen reis gevonden klik Verder spelen.' : '✅ Klaar! Klik Uitvaren.';
 requestAnimationFrame(update);
+window.gameLoaded=true;   // tells the index-watchdog the module came alive

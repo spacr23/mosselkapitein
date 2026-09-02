@@ -1,6 +1,6 @@
 // Mosselkapitein service worker — offline play + instant reloads.
 // Bump CACHE when you change index.html / game.js so phones pick up the new version.
-const CACHE = "mosselkapitein-v21";
+const CACHE = "mosselkapitein-v22";
 
 // Same-origin app shell + the Three.js modules from the CDN.
 const ASSETS = [
@@ -38,8 +38,10 @@ self.addEventListener('fetch', e => {
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put('./index.html', copy));
+        if (res.ok) {                       // never cache an error page as the shell
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put('./index.html', copy));
+        }
         return res;
       }).catch(() => caches.match('./index.html'))
     );
@@ -49,8 +51,10 @@ self.addEventListener('fetch', e => {
   // Everything else (game.js, icons, three.js): cache-first, then network (and cache it).
   e.respondWith(
     caches.match(req).then(hit => hit || fetch(req).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+      if (res.ok) {                         // a 404 during a deploy must never get stuck in cache
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+      }
       return res;
     }).catch(() => hit))
   );
