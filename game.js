@@ -11,7 +11,8 @@ const W = {
   skills: { navigatie: 1, koken: 1, handel: 1, visserij: 1 },
   skillXp: { navigatie: 0, koken: 0, handel: 0, visserij: 0 },
   // inventory
-  inv: { mossel: 0, goudmossel: 0, exoot: 0, krakeninkt: 0, schub: 0, schaar: 0 },
+  inv: { mossel: 0, goudmossel: 0, exoot: 0, krakeninkt: 0, schub: 0, schaar: 0,
+         zalm: 0, parel: 0, inktvis: 0 },
   dishes: {}, // dishName -> count
   // ship & upgrades
   ship: 0,                 // index in SHIPS
@@ -507,8 +508,9 @@ for(const h of HARBORS){
   const R = h.r;
   const coreR = R*0.62;               // solid land radius
   // ----- land mass: gentle grassy mound with a sandy edge + stone quay -----
+  const hbBiome=biomeAt(h.x,h.z);
   const land=new THREE.Mesh(new THREE.SphereGeometry(coreR,32,20,0,Math.PI*2,0,Math.PI*0.5),
-    new THREE.MeshStandardMaterial({color:0x5d7a44, roughness:.95}));
+    new THREE.MeshStandardMaterial({color:hbBiome==='storm'?0xe8eef4 : hbBiome==='mist'?0x54604e : 0x5d7a44, roughness:hbBiome==='storm'?.7:.95}));
   land.scale.y=0.22; land.position.y=-0.5; land.receiveShadow=true; g.add(land);
   const beachRing=new THREE.Mesh(new THREE.CylinderGeometry(coreR*1.02,coreR*1.1,1.6,32),
     new THREE.MeshStandardMaterial({color:0xbfae88, roughness:1})); beachRing.position.y=0; g.add(beachRing);
@@ -582,13 +584,20 @@ for(const h of HARBORS){
 function terrainNoise(x,z){ // small deterministic 2D noise
   return Math.sin(x*0.7)*Math.cos(z*0.9)*0.5 + Math.sin(x*2.3+z*1.7)*0.3 + Math.sin(x*4.1-z*3.3)*0.2;
 }
-function makeIslandTerrain(r){
+const ISLAND_PALETTES={
+  kust:    { sand:0xcdb98a, grass:0x4a7a3a, forest:0x33582b, rock:0x6f675a },
+  storm:   { sand:0xcfdce6, grass:0xeef3f7, forest:0xd8e4ec, rock:0x8a96a4 },  // ice shore, snow, grey rock
+  tropisch:{ sand:0xe9d6a2, grass:0x55a047, forest:0x2c7a3a, rock:0x8f7d5e },
+  mist:    { sand:0x9a9384, grass:0x5a6656, forest:0x3d4a42, rock:0x56525b },
+};
+function makeIslandTerrain(r, biome='kust'){
   const geo=new THREE.SphereGeometry(r,36,22,0,Math.PI*2,0,Math.PI*0.5);
   geo.scale(1,0.42,1);
   const pos=geo.attributes.position;
   const colors=new Float32Array(pos.count*3);
-  const sand=new THREE.Color(0xcdb98a), grass=new THREE.Color(0x4a7a3a),
-        forest=new THREE.Color(0x33582b), rock=new THREE.Color(0x6f675a);
+  const pal=ISLAND_PALETTES[biome]||ISLAND_PALETTES.kust;
+  const sand=new THREE.Color(pal.sand), grass=new THREE.Color(pal.grass),
+        forest=new THREE.Color(pal.forest), rock=new THREE.Color(pal.rock);
   const maxH=r*0.42;
   for(let i=0;i<pos.count;i++){
     const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
@@ -609,7 +618,7 @@ function makeIslandTerrain(r){
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors,3));
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({vertexColors:true, roughness:.92, metalness:0}));
+  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({vertexColors:true, roughness:biome==='storm'?.75:.92, metalness:0}));
 }
 function makePalm(px,pz,py,scale=1){
   const palm=new THREE.Group();
@@ -631,24 +640,55 @@ function makePalm(px,pz,py,scale=1){
   palm.position.set(px,py,pz);
   return palm;
 }
+function makePine(px,pz,py,scale=1){
+  const pine=new THREE.Group();
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.35*scale,0.55*scale,3.5*scale,6),
+    new THREE.MeshStandardMaterial({color:0x5a4630,roughness:.9}));
+  trunk.position.y=1.7*scale; trunk.castShadow=true; pine.add(trunk);
+  for(let l=0;l<3;l++){
+    const cone=new THREE.Mesh(new THREE.ConeGeometry((3.2-l*0.8)*scale,(3.2-l*0.4)*scale,8),
+      new THREE.MeshStandardMaterial({color:0x2c5238,roughness:.85}));
+    cone.position.y=(3.6+l*2.1)*scale; cone.castShadow=true; pine.add(cone);
+  }
+  const snowCap=new THREE.Mesh(new THREE.ConeGeometry(1.1*scale,1.2*scale,8),
+    new THREE.MeshStandardMaterial({color:0xf2f6fa,roughness:.6}));
+  snowCap.position.y=8.6*scale; pine.add(snowCap);
+  pine.position.set(px,py,pz);
+  return pine;
+}
+function makeDeadTree(px,pz,py,scale=1){
+  const tree=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:0x453c33,roughness:1});
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.28*scale,0.5*scale,7*scale,6), mat);
+  trunk.position.y=3.5*scale; trunk.rotation.z=(Math.random()-0.5)*0.25; trunk.castShadow=true; tree.add(trunk);
+  for(let b=0;b<3;b++){
+    const br=new THREE.Mesh(new THREE.CylinderGeometry(0.10*scale,0.16*scale,3*scale,5), mat);
+    br.position.set((Math.random()-0.5)*1.6*scale,(4+b*1.4)*scale,(Math.random()-0.5)*1.6*scale);
+    br.rotation.z=0.7+Math.random()*0.8; br.rotation.y=Math.random()*6.28; tree.add(br);
+  }
+  tree.position.set(px,py,pz);
+  return tree;
+}
 // build islands
 for(const isl of ISLANDS){
   const g=new THREE.Group();
-  const terrain=makeIslandTerrain(isl.r);
+  const biome=biomeAt(isl.x,isl.z);
+  const terrain=makeIslandTerrain(isl.r,biome);
   terrain.position.y=-1.5; terrain.receiveShadow=true; terrain.castShadow=true; g.add(terrain);
   // scattered boulders along the coast
   for(let i=0;i<5;i++){
     const a=Math.random()*6.28, rr=isl.r*(0.75+Math.random()*0.2);
     const boulder=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5+Math.random()*2.5,0),
-      new THREE.MeshStandardMaterial({color:0x6b6257,roughness:1,flatShading:true}));
+      new THREE.MeshStandardMaterial({color:biome==='storm'?0x8a94a0:0x6b6257,roughness:1,flatShading:true}));
     boulder.position.set(Math.cos(a)*rr, 0.4, Math.sin(a)*rr);
     boulder.rotation.set(Math.random()*3,Math.random()*3,0); boulder.castShadow=true; g.add(boulder);
   }
-  // palms on the mid slopes
-  const nPalms=3+Math.floor(isl.r/16);
-  for(let i=0;i<nPalms;i++){
+  // trees fit the climate: pines in the IJszee, bare trunks in the mist, palms elsewhere
+  const nTrees=3+Math.floor(isl.r/16);
+  for(let i=0;i<nTrees;i++){
     const a=Math.random()*6.28, rr=isl.r*(0.3+Math.random()*0.3);
-    g.add(makePalm(Math.cos(a)*rr, Math.sin(a)*rr, isl.r*0.16, 0.8+Math.random()*0.5));
+    const tx=Math.cos(a)*rr, tz=Math.sin(a)*rr, ty=isl.r*0.16, ts=0.8+Math.random()*0.5;
+    g.add(biome==='storm'?makePine(tx,tz,ty,ts) : biome==='mist'?makeDeadTree(tx,tz,ty,ts) : makePalm(tx,tz,ty,ts));
   }
   if(isl.treasure){
     const chest=new THREE.Mesh(new THREE.BoxGeometry(3,2,2),
@@ -662,6 +702,22 @@ for(const isl of ISLANDS){
   g.position.set(isl.x,0,isl.z);
   poiGroup.add(g);
   islandMeshes.push({...isl, group:g});
+}
+
+// ---- ice floes drifting through the IJszee ----
+const floes=[];
+{
+  const floeMat=new THREE.MeshStandardMaterial({color:0xeef4f8, roughness:.55, flatShading:true});
+  for(let i=0;i<14;i++){
+    const r=5+Math.random()*9;
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(r, r*1.12, 1.1, 7), floeMat);
+    m.scale.set(1, 1, 0.65+Math.random()*0.5);
+    m.rotation.y=Math.random()*6.28;
+    const x=(Math.random()-0.5)*5000, z=-1250-Math.random()*1500;
+    m.position.set(x, 0, z);
+    scene.add(m);
+    floes.push({mesh:m, x, z, spin:(Math.random()-0.5)*0.05, drift:2+Math.random()*3});
+  }
 }
 
 // ---- ambient gulls circling islands & harbours (life in the world) ----
@@ -702,21 +758,57 @@ function updateAmbientGulls(dt,t){
 // ---- mussel beds (dynamic) ----
 const beds = [];
 const bedGeo = new THREE.IcosahedronGeometry(0.55,0);
+// Bed kinds per sea: 'mossel' (everywhere), 'zalm' (swimming schools, IJszee),
+// 'parel' (pearl oysters, tropics), 'inktvis' (squid swarms, mist zone, night only).
 function spawnBed(x,z,opts={}){
   const g=new THREE.Group();
-  const count = 8+Math.floor(Math.random()*8);
-  const golden = opts.golden || (Math.random()<0.04);
-  for(let i=0;i<count;i++){
-    const m=new THREE.Mesh(bedGeo, new THREE.MeshStandardMaterial({
-      color: golden?0xffd34d:0x2a2a35, emissive: golden?0x6a4a00:0x000000,
-      emissiveIntensity: golden?0.5:0, roughness:.7, metalness: golden?.5:.1, flatShading:true}));
-    m.position.set((Math.random()-0.5)*5,0,(Math.random()-0.5)*5);
-    m.scale.setScalar(0.6+Math.random()*0.8); g.add(m);
+  const kind = opts.kind || 'mossel';
+  const golden = kind==='mossel' && (opts.golden || Math.random()<0.04);
+  if(kind==='zalm'){
+    // a school of silvery fish that swims about
+    for(let i=0;i<5;i++){
+      const f=new THREE.Mesh(new THREE.ConeGeometry(0.5,2.4,6),
+        new THREE.MeshStandardMaterial({color:0xc5d4de, roughness:.35, metalness:.5}));
+      f.rotation.x=Math.PI/2;
+      f.position.set((Math.random()-0.5)*6, -0.4-Math.random()*0.5, (Math.random()-0.5)*6);
+      g.add(f);
+    }
+  } else if(kind==='parel'){
+    // pale oyster shells with a soft pink sheen
+    for(let i=0;i<5;i++){
+      const m=new THREE.Mesh(bedGeo, new THREE.MeshStandardMaterial({
+        color:0xf3e8e2, emissive:0xb96a8a, emissiveIntensity:.18, roughness:.35, metalness:.3, flatShading:true}));
+      m.position.set((Math.random()-0.5)*4,0,(Math.random()-0.5)*4);
+      m.scale.setScalar(0.7+Math.random()*0.6); g.add(m);
+    }
+  } else if(kind==='inktvis'){
+    // glowing violet squid, hovering just under the surface
+    for(let i=0;i<4;i++){
+      const s=new THREE.Mesh(new THREE.ConeGeometry(0.8,2.6,7),
+        new THREE.MeshStandardMaterial({color:0x8a5ad0, emissive:0x6a2aff, emissiveIntensity:.8,
+          transparent:true, opacity:.9, roughness:.4}));
+      s.position.set((Math.random()-0.5)*5, -0.8, (Math.random()-0.5)*5);
+      g.add(s);
+    }
+  } else {
+    const count = 8+Math.floor(Math.random()*8);
+    for(let i=0;i<count;i++){
+      const m=new THREE.Mesh(bedGeo, new THREE.MeshStandardMaterial({
+        color: golden?0xffd34d:0x2a2a35, emissive: golden?0x6a4a00:0x000000,
+        emissiveIntensity: golden?0.5:0, roughness:.7, metalness: golden?.5:.1, flatShading:true}));
+      m.position.set((Math.random()-0.5)*5,0,(Math.random()-0.5)*5);
+      m.scale.setScalar(0.6+Math.random()*0.8); g.add(m);
+    }
   }
   g.position.set(x,-1.2,z);
   poiGroup.add(g);
-  const bed={ x,z, group:g, amount: golden? 1+Math.floor(Math.random()*2) : 6+Math.floor(Math.random()*10),
-              golden, growth:0, biome:biomeAt(x,z) };
+  const amount = golden? 1+Math.floor(Math.random()*2)
+    : kind==='parel'? 2+Math.floor(Math.random()*3)
+    : kind==='zalm'? 8+Math.floor(Math.random()*8)
+    : kind==='inktvis'? 4+Math.floor(Math.random()*4)
+    : 6+Math.floor(Math.random()*10);
+  const bed={ x,z, group:g, amount, kind, golden, growth:0, biome:biomeAt(x,z),
+              heading:Math.random()*6.28 };
   beds.push(bed);
   return bed;
 }
@@ -726,14 +818,23 @@ function biomeAt(x,z){
   if(x < -1000) return 'mist';
   return 'kust';
 }
+// pick a bed kind that suits the local sea
+function bedKindFor(x,z){
+  const bi=biomeAt(x,z), r=Math.random();
+  if(bi==='storm')    return r<0.55 ? 'zalm'    : 'mossel';
+  if(bi==='tropisch') return r<0.40 ? 'parel'   : 'mossel';
+  if(bi==='mist')     return r<0.45 ? 'inktvis' : 'mossel';
+  return 'mossel';
+}
 // initial beds scattered across the (now much bigger) ocean
 function seedBeds(n){
   for(let i=0;i<n;i++){
     const a=Math.random()*Math.PI*2, r=120+Math.random()*2600;
-    spawnBed(Math.cos(a)*r, Math.sin(a)*r);
+    const x=Math.cos(a)*r, z=Math.sin(a)*r;
+    spawnBed(x,z,{kind:bedKindFor(x,z)});
   }
 }
-seedBeds(90);
+seedBeds(100);
 
 // ---- floating points of interest: bottles, stranded sailors, exotic fish ----
 const bottles=[], sailors=[], exotics=[];
@@ -1566,9 +1667,19 @@ function sonarPing(){
   beep(660,0.08); setTimeout(()=>beep(880,0.08),90);
 }
 
+function bedActive(b){ return b.kind!=='inktvis' || isNight(); }  // squid only surface at night
+function bedColor(b){
+  if(b.golden) return '#ffd34d';
+  return b.kind==='zalm'?'#cfe0ec' : b.kind==='parel'?'#ffb6d9' : b.kind==='inktvis'?'#b06bff' : '#5bd97a';
+}
+function bedName(b){
+  if(b.golden) return '🌟 Gouden mosselbank!';
+  return b.kind==='zalm'?'🐟 Zalmschool' : b.kind==='parel'?'✨ Pareloesterbank'
+       : b.kind==='inktvis'?'🦑 Inktviszwerm' : '🦪 Mosselbank';
+}
 function nearestBed(maxD=14){
   let best=null,bd=maxD*maxD;
-  for(const b of beds){ if(b.amount<=0) continue; const d=dist2(b.x,b.z,shipState.x,shipState.z); if(d<bd){bd=d;best=b;} }
+  for(const b of beds){ if(b.amount<=0 || !bedActive(b)) continue; const d=dist2(b.x,b.z,shipState.x,shipState.z); if(d<bd){bd=d;best=b;} }
   return best;
 }
 function nearestHarbor(extra=36){
@@ -1586,7 +1697,7 @@ function nearbySailor(){ for(const s of sailors){ if(dist2(s.x,s.z,shipState.x,s
 function nearbyExotic(){ for(const e of exotics){ if(dist2(e.x,e.z,shipState.x,shipState.z)<90) return e; } return null; }
 function nearbyIsland(){ for(const i of islandMeshes){ if(dist2(i.x,i.z,shipState.x,shipState.z)<(i.r+18)*(i.r+18)) return i; } return null; }
 
-function holdCount(){ return W.inv.mossel + W.inv.goudmossel; }
+function holdCount(){ return W.inv.mossel + W.inv.goudmossel + W.inv.zalm + W.inv.parel + W.inv.inktvis; }
 
 function tryInteract(){
   if(W.paused) return;
@@ -1610,18 +1721,25 @@ function doHarvest(dt){
   if(holdCount()>=W.holdMax){ harvesting=false; toast('🚫 Ruim is vol!','bad'); return; }
   const b=harvestTarget;
   if(b.amount<=0 || dist2(b.x,b.z,shipState.x,shipState.z)>16*16){ harvesting=false; harvestTarget=null; return; }
-  const rate = (0.9 + W.harvestLvl*0.5) * (1 + (W.skills.visserij-1)*0.12);
+  // pearls come up slowly, squid and salmon a bit under mussel pace
+  const kindRate = b.kind==='parel'?0.45 : b.kind==='inktvis'?0.7 : b.kind==='zalm'?0.85 : 1;
+  const rate = (0.9 + W.harvestLvl*0.5) * (1 + (W.skills.visserij-1)*0.12) * kindRate;
   harvestTimer += dt*rate;
   if(harvestTimer>=1){
     harvestTimer-=1; b.amount--;
     if(b.golden){ W.inv.goudmossel++; W.totalGold++; goldenMusselPower(); }
+    else if(b.kind==='zalm'){ W.inv.zalm++; W.totalZalm++; }
+    else if(b.kind==='parel'){ W.inv.parel++; W.totalParel++; }
+    else if(b.kind==='inktvis'){ W.inv.inktvis++; W.totalInktvis++; }
     else W.inv.mossel++;
     W.totalCaught++;
-    gainSkill('visserij', b.golden?6:1.4);
+    gainSkill('visserij', b.golden?6 : b.kind==='parel'?4 : 1.4);
     splash(b.x,b.z);
     if(b.amount<=0){ poiGroup.remove(b.group); beds.splice(beds.indexOf(b),1);
-      // respawn a new bed elsewhere to keep ocean alive
-      const a=Math.random()*6.28,r=200+Math.random()*2600; spawnBed(Math.cos(a)*r,Math.sin(a)*r);
+      // respawn a new bed elsewhere, matched to whatever sea it lands in
+      const a=Math.random()*6.28,r=200+Math.random()*2600;
+      const nx=Math.cos(a)*r, nz=Math.sin(a)*r;
+      spawnBed(nx,nz,{kind:bedKindFor(nx,nz)});
       harvesting=false; harvestTarget=null;
     }
     updateHUD();
@@ -1722,6 +1840,10 @@ const RECIPES=[
   {name:'Gouden Paella',        icon:'🥘', need:18, base:620,  skill:4, goldNeed:1},
   {name:'Bouillabaisse Royale', icon:'🍲', need:22, base:820,  skill:5, goldNeed:1, exootNeed:1},
   {name:'Zeevruchten Platter',  icon:'🍱', need:26, base:1050, skill:6, goldNeed:2},
+  {name:'Gerookte Zalmplank',   icon:'🐟', need:4,  base:380,  skill:2, zalmNeed:5},
+  {name:'Zalmstoof van de IJszee',icon:'🍲', need:8, base:520,  skill:3, zalmNeed:4},
+  {name:'Inktvisringen',        icon:'🦑', need:2,  base:340,  skill:2, inktvisNeed:5},
+  {name:'Zwarte-inktrisotto',   icon:'🍚', need:6,  base:600,  skill:4, inktvisNeed:4},
   {name:'Keizers Banket',       icon:'👑', need:34, base:1600, skill:7, goldNeed:3, exootNeed:2},
 ];
 function dishPrice(r,harbor){
@@ -1769,8 +1891,13 @@ const QUESTS=[
   {id:'q11',t:'Versla de Zeeslang',            check:()=>W.serpentsSlain>=1, reward:800},
   {id:'q12',t:'Plunder een spookschip',        check:()=>W.ghostsLooted>=1, reward:600},
   {id:'q13',t:'Red een haven van de Reuzenkrab',check:()=>W.crabsSlain>=1, reward:900},
+  {id:'q14',t:'Vang 10 zalmen in de IJszee',    check:()=>W.totalZalm>=10, reward:250},
+  {id:'q15',t:'Duik 3 parels op in de tropen',  check:()=>W.totalParel>=3, reward:300},
+  {id:'q16',t:'Vang 5 inktvissen bij nacht',    check:()=>W.totalInktvis>=5, reward:300},
+  {id:'q17',t:'Verkoop een parel in de IJszee', check:()=>W.parelInIJszee, reward:400},
 ];
 W.totalCaught=0; W.totalCooked=0; W.totalEarned=0; W.totalGold=0;
+W.totalZalm=0; W.totalParel=0; W.totalInktvis=0; W.parelInIJszee=false;
 function checkQuests(){
   for(const q of QUESTS){
     if(!W.questsDone.has(q.id) && q.check()){
@@ -1863,11 +1990,27 @@ function renderHarbor(){
     <div id="modalBody">${body}</div>
   `);
 }
+// Each sea pays differently for the new products: catch it far away, sell it far
+// from where it came and the price roughly doubles. That builds trade routes.
+const PRODUCT_PRICES={
+  zalm:    { base:25,  storm:0.7, kust:1.3, tropisch:1.8, mist:1.0, tip:'verkoopt het best in de tropen' },
+  parel:   { base:120, storm:1.8, kust:1.4, tropisch:0.7, mist:1.1, tip:'verkoopt het best in de IJszee' },
+  inktvis: { base:35,  storm:1.1, kust:1.5, tropisch:1.2, mist:0.7, tip:'verkoopt het best aan de kust' },
+};
+function productPrice(kind,harbor){
+  const p=PRODUCT_PRICES[kind]; if(!p) return 0;
+  let v=p.base*(p[harbor.biome]||1)*harbor.demand*(1+(W.skills.handel-1)*0.08);
+  if(W.buffs.prijs) v*=1.3;
+  return Math.round(v);
+}
 function tabVerkoop(h){
   const mp=musselPrice(h);
   let rows='';
   rows+=invRow('🦪 Mosselen', W.inv.mossel, mp, ()=>`window.__sell('mossel')`);
   rows+=invRow('🌟 Gouden mosselen', W.inv.goudmossel, mp*8, ()=>`window.__sell('goudmossel')`);
+  rows+=invRow('🐟 Zalm', W.inv.zalm, productPrice('zalm',h), ()=>`window.__sell('zalm')`,'('+PRODUCT_PRICES.zalm.tip+')');
+  rows+=invRow('✨ Parels', W.inv.parel, productPrice('parel',h), ()=>`window.__sell('parel')`,'('+PRODUCT_PRICES.parel.tip+')');
+  rows+=invRow('🦑 Inktvis', W.inv.inktvis, productPrice('inktvis',h), ()=>`window.__sell('inktvis')`,'('+PRODUCT_PRICES.inktvis.tip+')');
   rows+=invRow('🐠 Exotische dieren', W.inv.exoot, 60, ()=>`window.__sell('exoot')`,'(of doneer aan aquarium)');
   rows+=invRow('🖋️ Krakeninkt', W.inv.krakeninkt, 220, ()=>`window.__sell('krakeninkt')`,'(zeldzame buit van de Kraken)');
   rows+=invRow('🐲 Zeeslangschubben', W.inv.schub, 150, ()=>`window.__sell('schub')`,'(glinsterende buit van de zeeslang)');
@@ -1909,10 +2052,10 @@ function tabKombuis(h){
   let cards='';
   for(const r of RECIPES){
     const locked=W.skills.koken<r.skill;
-    const enough=W.inv.mossel>=r.need && (!r.goldNeed||W.inv.goudmossel>=r.goldNeed) && (!r.exootNeed||W.inv.exoot>=r.exootNeed);
+    const enough=W.inv.mossel>=r.need && (!r.goldNeed||W.inv.goudmossel>=r.goldNeed) && (!r.exootNeed||W.inv.exoot>=r.exootNeed) && (!r.zalmNeed||W.inv.zalm>=r.zalmNeed) && (!r.inktvisNeed||W.inv.inktvis>=r.inktvisNeed);
     cards+=`<div class="card2">
       <h3>${r.icon} ${r.name} ${locked?`<span class="lvltag">Koken Lv.${r.skill}</span>`:''}</h3>
-      <p>Nodig: ${r.need}× 🦪 ${r.goldNeed?`+ ${r.goldNeed}× 🌟`:''}${r.exootNeed?` + ${r.exootNeed}× 🐠`:''}<br>Verkoopwaarde ~<span class="price">${dishPrice(r,h)} 🪙</span></p>
+      <p>Nodig: ${r.need}× 🦪 ${r.goldNeed?`+ ${r.goldNeed}× 🌟`:''}${r.exootNeed?` + ${r.exootNeed}× 🐠`:''}${r.zalmNeed?` + ${r.zalmNeed}× 🐟`:''}${r.inktvisNeed?` + ${r.inktvisNeed}× 🦑`:''}<br>Verkoopwaarde ~<span class="price">${dishPrice(r,h)} 🪙</span></p>
       <button class="btn" ${locked||!enough?'disabled':''} onclick="window.__cook('${r.name}')">${locked?'🔒 Vergrendeld':(enough?'👨‍🍳 Koken (minigame)':'Te weinig ingrediënten')}</button>
     </div>`;
   }
@@ -1973,24 +2116,29 @@ function tabKapitein(h){
       <button class="btn" ${(W.inv.mossel<10)?'disabled':''} onclick="window.__contest()">Doe mee (10× 🦪) prijs tot 600 🪙</button></div>
   </div>`;
 }
-function biomeLabel(b){ return {kust:'🌅 Rustige kustwateren',storm:'⛈️ Stormachtige noordzee',tropisch:'🏝️ Tropische wateren',mist:'🌫️ Mistige mysterezone'}[b]||b; }
+function biomeLabel(b){ return {kust:'🌅 Kustwateren',storm:'❄️ IJszee',tropisch:'🏝️ Parelzee (tropen)',mist:'🌫️ Schemerzee'}[b]||b; }
 
 // ---- expose handlers to window (modal onclick) ----
 window.__close=closeModal;
 window.__tab=t=>{ curTab=t; renderHarbor(); };
 window.__sell=kind=>{
   if(W.inv[kind]<=0) return;
-  let price = kind==='goudmossel'? musselPrice(curHarbor)*8 : kind==='exoot'? 60 : kind==='krakeninkt'? 220 : kind==='schub'? 150 : kind==='schaar'? 180 : musselPrice(curHarbor);
+  let price = kind==='goudmossel'? musselPrice(curHarbor)*8 : kind==='exoot'? 60 : kind==='krakeninkt'? 220 : kind==='schub'? 150 : kind==='schaar'? 180
+    : PRODUCT_PRICES[kind]? productPrice(kind,curHarbor) : musselPrice(curHarbor);
+  if(kind==='parel' && curHarbor.biome==='storm') W.parelInIJszee=true;
   W.inv[kind]--; W.gold+=price; W.totalEarned+=price; gainSkill('handel',1.2);
   beep(720,.05); renderHarbor(); updateHUD(); checkQuests();
 };
 window.__sellAll=()=>{
   const mp=musselPrice(curHarbor);
-  let tot = W.inv.mossel*mp + W.inv.goudmossel*mp*8 + W.inv.exoot*60;
+  let tot = W.inv.mossel*mp + W.inv.goudmossel*mp*8 + W.inv.exoot*60
+    + W.inv.zalm*productPrice('zalm',curHarbor) + W.inv.parel*productPrice('parel',curHarbor)
+    + W.inv.inktvis*productPrice('inktvis',curHarbor);
   if(tot<=0) return;
+  if(W.inv.parel>0 && curHarbor.biome==='storm') W.parelInIJszee=true;
   W.totalEarned+=tot; W.gold+=tot;
-  gainSkill('handel', (W.inv.mossel+W.inv.goudmossel+W.inv.exoot)*0.5);
-  W.inv.mossel=0; W.inv.goudmossel=0; W.inv.exoot=0;
+  gainSkill('handel', (W.inv.mossel+W.inv.goudmossel+W.inv.exoot+W.inv.zalm+W.inv.parel+W.inv.inktvis)*0.5);
+  W.inv.mossel=0; W.inv.goudmossel=0; W.inv.exoot=0; W.inv.zalm=0; W.inv.parel=0; W.inv.inktvis=0;
   toast(`💰 Alles verkocht voor ${Math.floor(tot)} 🪙`,'good'); beep(720,.08);
   renderHarbor(); updateHUD(); checkQuests();
 };
@@ -2041,7 +2189,9 @@ window.__cookTap=()=>cookHit();
 // ============================================================================
 const cookGame={active:false, pos:0, dir:1, speed:1.4, zoneL:0.32, zoneW:0.30, perfL:0.45, perfW:0.08, recipe:null, contest:false, hits:0, need:3};
 function startCook(r, contest){
-  if(W.inv.mossel<r.need){ toast('Te weinig mosselen.','bad'); return; }
+  const short = W.inv.mossel<r.need || (r.goldNeed&&W.inv.goudmossel<r.goldNeed) || (r.exootNeed&&W.inv.exoot<r.exootNeed)
+    || (r.zalmNeed&&W.inv.zalm<r.zalmNeed) || (r.inktvisNeed&&W.inv.inktvis<r.inktvisNeed);
+  if(short){ toast('Te weinig ingredienten voor dit gerecht.','bad'); return; }
   cookGame.active=true; cookGame.recipe=r; cookGame.contest=contest;
   cookGame.pos=0; cookGame.dir=1; cookGame.hits=0; cookGame.need = contest?4:3;
   cookGame.speed = 1.1 + Math.random()*0.5 + W.skills.koken*0.05;
@@ -2205,7 +2355,7 @@ function updateCook(dt){
 }
 function finishCook(){
   const r=cookGame.recipe;
-  W.inv.mossel-=r.need; if(r.goldNeed) W.inv.goudmossel-=r.goldNeed; if(r.exootNeed) W.inv.exoot-=r.exootNeed;
+  W.inv.mossel-=r.need; if(r.goldNeed) W.inv.goudmossel-=r.goldNeed; if(r.exootNeed) W.inv.exoot-=r.exootNeed; if(r.zalmNeed) W.inv.zalm-=r.zalmNeed; if(r.inktvisNeed) W.inv.inktvis-=r.inktvisNeed;
   cookGame.active=false;
   const qual = cookQuality/cookGame.need; // ~0..1
   cookQuality=0;
@@ -2247,7 +2397,7 @@ function openMap(){
       <button class="btn alt" style="padding:6px 14px" onclick="window.__mapReset()">Hele kaart</button>
     </div>
     <div class="sub" style="margin-top:10px;display:flex;flex-wrap:wrap;row-gap:4px">
-      ${chip('#ff9d4d','haven','■')}${chip('#8fcf7a','eiland')}${chip('#ffd34d','schat','★')}${chip('#5bd97a','mosselbank','·')}${chip('#ffd34d','gouden bank','·')}
+      ${chip('#ff9d4d','haven','■')}${chip('#8fcf7a','eiland')}${chip('#ffd34d','schat','★')}${chip('#5bd97a','mosselbank','·')}${chip('#ffd34d','gouden bank','·')}${chip('#cfe0ec','zalmschool','·')}${chip('#ffb6d9','parelbank','·')}${chip('#b06bff','inktvis (nacht)','·')}
       ${chip('#9affc8','flessenpost','▲')}${chip('#ff6b6b','zeeman','✚')}${chip('#ff5a7a','monster','◆')}
     </div>`);
   setupMapInput();
@@ -2333,9 +2483,9 @@ function drawBigMap(){
     ctx.beginPath(); ctx.moveTo(sx(-3000),sy(v)); ctx.lineTo(sx(3000),sy(v)); ctx.stroke(); }
   // sea labels
   ctx.fillStyle='rgba(200,225,245,.45)'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center';
-  ctx.fillText('STORMACHTIGE NOORDZEE', ox, sy(-2600));
-  ctx.fillText('MISTIGE ZONE', sx(-2000), sy(2600));
-  ctx.fillText('TROPISCHE WATEREN', sx(2000), sy(2600));
+  ctx.fillText('IJSZEE', ox, sy(-2600));
+  ctx.fillText('SCHEMERZEE', sx(-2000), sy(2600));
+  ctx.fillText('PARELZEE', sx(2000), sy(2600));
 
   const label=(txt,x,y,col='#e6f2ff',size=11)=>{
     ctx.font=`${size}px sans-serif`; ctx.textAlign='center';
@@ -2364,7 +2514,7 @@ function drawBigMap(){
   }
 
   // ---- points of interest ----
-  for(const b of beds){ if(bedVisible(b)) dot(sx(b.x),sy(b.z), b.golden?3.5:2.5, b.golden?'#ffd34d':'#5bd97a'); }
+  for(const b of beds){ if(bedVisible(b) && bedActive(b)) dot(sx(b.x),sy(b.z), b.golden?3.5:2.5, bedColor(b)); }
   for(const bt of bottles){ const x=sx(bt.x), y=sy(bt.z); ctx.fillStyle='#9affc8'; ctx.beginPath(); ctx.moveTo(x,y-5); ctx.lineTo(x+4,y+3); ctx.lineTo(x-4,y+3); ctx.closePath(); ctx.fill(); }
   for(const s of sailors){ const x=sx(s.x), y=sy(s.z); ctx.strokeStyle='#ff6b6b'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(x-5,y); ctx.lineTo(x+5,y); ctx.moveTo(x,y-5); ctx.lineTo(x,y+5); ctx.stroke(); }
 
@@ -2420,7 +2570,7 @@ function drawSonar(){
     const [px,py]=toR(dx,dz);
     sctx.fillStyle=color; sctx.beginPath(); sctx.arc(px,py,size,0,6.28); sctx.fill();
   }
-  for(const b of beds){ if(bedVisible(b)) blip(b.x,b.z, b.golden?'#ffd34d':'#5bd97a', b.golden?4:3); }
+  for(const b of beds){ if(bedVisible(b) && bedActive(b)) blip(b.x,b.z, bedColor(b), b.golden?4:3); }
   for(const h of harborMarkers) blip(h.x,h.z,'#ff9d4d',4);
   if(kraken.known && kraken.state!=='gone'){ const big=krakenActive(); blip(kraken.x,kraken.z, big?'#ff3355':'#b95fd0', big?(6+Math.sin(oceanUniforms.uTime.value*8)*2):4); }
   if(serpent.state!=='gone' && serpent.state!=='dying'){ const agro=serpentActive(); blip(serpent.x,serpent.z, agro?'#ff5a3d':'#3fd9a8', agro?(5+Math.sin(oceanUniforms.uTime.value*8)*2):3.5); }
@@ -2613,9 +2763,32 @@ function stepSim(dt){
 
   // ---- POI bob ----
   for(const bt of bottles) bt.mesh.position.y=waveHeight(bt.x,bt.z,t,sc)+0.3;
+  for(const fl of floes){
+    fl.x+=fl.drift*dt*0.4; if(fl.x>2800) fl.x=-2800;
+    fl.mesh.position.set(fl.x, waveHeight(fl.x,fl.z,t,sc)*0.6-0.2, fl.z);
+    fl.mesh.rotation.y+=fl.spin*dt;
+  }
   for(const s of sailors) s.group.position.y=waveHeight(s.x,s.z,t,sc);
   for(const e of exotics){ e.mesh.position.y=waveHeight(e.x,e.z,t,sc)-0.6+Math.sin(t*2+e.x)*0.3; e.mesh.rotation.z=Math.sin(t+e.x)*0.4; }
-  for(const b of beds){ b.group.children.forEach((c,i)=>{ c.rotation.y+=dt*0.5; }); }
+  for(const b of beds){
+    if(b.kind==='zalm'){
+      // schools swim slowly through the IJszee; they speed up while being fished
+      b.heading += Math.sin(t*0.3+b.x)*0.4*dt;
+      const spd = (harvesting && harvestTarget===b) ? 8.5 : 5.5;
+      b.x += Math.sin(b.heading)*spd*dt; b.z += Math.cos(b.heading)*spd*dt;
+      if(b.z>-950){ b.z=-950; b.heading=Math.PI+(Math.random()-0.5); }       // stay in the cold sea
+      if(b.z<-2750) b.z=-2750, b.heading=(Math.random()-0.5);
+      if(Math.abs(b.x)>2750) b.x=Math.sign(b.x)*2750, b.heading=-b.heading;
+      b.group.position.set(b.x,-1.2,b.z);
+      b.group.children.forEach((c,i)=>{ c.rotation.y=b.heading+Math.PI; c.position.y=-0.4+Math.sin(t*3+i)*0.35; });
+      if(Math.random()<dt*0.7) splash(b.x+(Math.random()-0.5)*6, b.z+(Math.random()-0.5)*6);
+    } else if(b.kind==='inktvis'){
+      b.group.visible = isNight();
+      if(b.group.visible) b.group.children.forEach((c,i)=>{ c.position.y=-0.8+Math.sin(t*1.6+i*2)*0.4; c.rotation.y+=dt*0.8; });
+    } else {
+      b.group.children.forEach((c,i)=>{ c.rotation.y+=dt*0.5; });
+    }
+  }
   // harbor beacon pulse + buoy bob
   for(const h of harborMarkers){
     const ud=h.group.userData;
@@ -2706,10 +2879,18 @@ function applyEnvironment(dt){
   oceanUniforms.uNight.value=night;
   updateShipLights(night);        // ship lamps fade in as it gets dark
   oceanUniforms.uSunStrength.value=wm.sun*(0.4+dayAmt);
-  const deep=new THREE.Color(0x05335e).lerp(wt,(1-wm.sun)*0.3);
-  oceanUniforms.uDeep.value.copy(deep);
-  const mid=new THREE.Color(0x0e6493).lerp(wt,(1-wm.sun)*0.35);
-  oceanUniforms.uMid.value.copy(mid);
+  // each sea has its own water colour; blend toward it as you cross over
+  const WATER_TINTS={
+    kust:    { deep:0x05335e, mid:0x0e6493 },
+    storm:   { deep:0x0c3348, mid:0x2a5a72 },   // steel-blue polar water
+    tropisch:{ deep:0x045f66, mid:0x0e8f92 },   // warm turquoise
+    mist:    { deep:0x122436, mid:0x2c4258 },   // dark, muted
+  };
+  const tint=WATER_TINTS[biomeAt(shipState.x,shipState.z)]||WATER_TINTS.kust;
+  const deep=new THREE.Color(tint.deep).lerp(wt,(1-wm.sun)*0.3);
+  oceanUniforms.uDeep.value.lerp(deep, Math.min(1,dt*0.4));
+  const mid=new THREE.Color(tint.mid).lerp(wt,(1-wm.sun)*0.35);
+  oceanUniforms.uMid.value.lerp(mid, Math.min(1,dt*0.4));
 
   // fog
   const baseFog = wm.fog * (0.7+night*0.6);
@@ -2754,7 +2935,7 @@ function updatePrompt(){
   const bt=nearbyBottle(); if(bt){ showPrompt(`<b>📜 Flessenpost drijft voorbij</b><br>${A_E} Openmaken`); return; }
   const ex=nearbyExotic(); if(ex){ showPrompt(`<b>🐠 Exotisch zeedier!</b><br>${A_E} Vangen voor je aquarium`); return; }
   const b=nearestBed();
-  if(b){ showPrompt(`<b>${b.golden?'🌟 Gouden mosselbank!':'🦪 Mosselbank'}</b> <small>(${b.amount} over)</small><br>${PRESS} ${A_SP} en houd vast`); return; }
+  if(b){ showPrompt(`<b>${bedName(b)}</b> <small>(${b.amount} over)</small><br>${PRESS} ${A_SP} en houd vast`); return; }
   hidePrompt();
 }
 
@@ -2854,9 +3035,16 @@ function makeRain(){
   return {points,pos,N};
 }
 function updateRain(dt){
-  const p=rain.pos; const speed=W.weather==='storm'?160:90;
+  const p=rain.pos;
+  const snow = biomeAt(shipState.x,shipState.z)==='storm';   // polar sea: snow instead of rain
+  const speed = snow ? 26 : (W.weather==='storm'?160:90);
+  const drift = snow ? Math.sin(oceanUniforms.uTime.value*0.7)*6 : 0;
+  rain.points.material.color.setHex(snow?0xffffff:0xaaccee);
+  rain.points.material.size = snow?1.4:0.7;
+  rain.points.material.opacity = snow?0.85:0.5;
   for(let i=0;i<rain.N;i++){
     p[i*3+1]-=speed*dt;
+    if(snow) p[i*3]+=drift*dt*(0.5+((i%7)/7));
     if(p[i*3+1]<0){ p[i*3+1]=120; p[i*3]=(Math.random()-0.5)*240; p[i*3+2]=(Math.random()-0.5)*240; }
   }
   rain.points.position.set(shipState.x,0,shipState.z);
@@ -3029,6 +3217,7 @@ function openManual(){
         : `${key('W')}${key('S')} gas/achteruit · ${key('A')}${key('D')} sturen · ${key('Shift')} boost · ${key('F')} sonar · ${key('Spatie')} vangen · ${key('E')} actie/aanmeren · ${key('H')} harpoen · ${key('C')} camera · ${key('M')} kaart · ${key('U')} werf · ${key('G')} meeuw · ${key('P')} pauze. Sleep met de muis om rond te kijken.`}</p></div>
       <div class="card2"><h3>🦪 Vangen & koken</h3><p>Ping met de <b>${IS_TOUCH?'📡 Sonar':'F'}</b> om mosselbanken te vinden. Een echo blijft maar korte tijd op je scherm staan, dus ping regelmatig opnieuw. Vaar erheen, houd <b>${IS_TOUCH?'🦪 Vang':'Spatie'}</b> vast tot je ruim vol is. Meer aan in een haven, open de <b>Kombuis</b> en kook met perfecte timing: hoe beter je timing, hoe waardevoller het gerecht.</p></div>
       <div class="card2"><h3>🛡️ Romp & overleven</h3><p>Je <b>romp</b> staat in de balk bovenin. Monsters slaan er stukken uit; buiten gevechten herstelt hij langzaam vanzelf. Koop <b>Onderhoud</b> op de werf om hem in één keer volledig te repareren. Loopt je romp leeg, dan <b>zink je en ben je je voortgang kwijt</b>. Vlucht dus op tijd!</p></div>
+      <div class="card2"><h3>🧭 De Vier Zeeën</h3><p>Elke hoek van de oceaan heeft eigen vangst: <b>❄️ IJszee</b> (noord) met zwemmende <b>zalmscholen</b>, <b>🏝️ Parelzee</b> (oost) met kostbare <b>pareloesters</b>, <b>🌫️ Schemerzee</b> (west) met <b>inktvis die alleen bij nacht</b> opduikt, en de vertrouwde mosselbanken aan de kust. Vang het ver weg en verkoop het aan de andere kant van de kaart voor de beste prijs!</p></div>
       <div class="card2"><h3>🌊 De open zee</h3><p>Ontdek verborgen eilanden met schatten 🏴‍☠️, red gestrande zeelieden ⛑️, vang exotische dieren voor je aquarium 🐠, vind gouden mosselen 🌟 en flessenpost met missies 📜. Let op het weer en de dag-/nachtcyclus.</p></div>
       <div class="card2" style="grid-column:1/-1"><h3>🐙 Zeemonsters: waar en wanneer</h3>
         <p>Koop eerst het <b>🔱 Harpoenkanon</b> op de werf (1500). Grotere schepen hebben meer vuurkracht en een sterkere romp.</p>
@@ -3067,6 +3256,7 @@ function serializeSave(){
     questsDone:[...W.questsDone],
     rescued:W.rescued, treasures:W.treasures, bottles:W.bottles,
     totalCaught:W.totalCaught, totalCooked:W.totalCooked, totalEarned:W.totalEarned, totalGold:W.totalGold,
+    totalZalm:W.totalZalm, totalParel:W.totalParel, totalInktvis:W.totalInktvis, parelInIJszee:W.parelInIJszee,
     islandsVisited: islandMeshes.map(i=>!!i.visited),
     ship_x:shipState.x, ship_z:shipState.z, ship_h:shipState.heading,
   };
@@ -3091,11 +3281,15 @@ function applySave(d){
     'hasHarpoon','hull','krakensSlain','krakenGoneUntilDay',
     'serpentsSlain','serpentGoneUntilDay','ghostsLooted','crabsSlain','crabNextDay',
     'seagullName','aquarium','time','day','rescued','treasures','bottles',
-    'totalCaught','totalCooked','totalEarned','totalGold'];
+    'totalCaught','totalCooked','totalEarned','totalGold',
+    'totalZalm','totalParel','totalInktvis','parelInIJszee'];
   for(const k of keys){ if(d[k]!==undefined) W[k]=d[k]; }
   if(W.inv.krakeninkt===undefined) W.inv.krakeninkt=0;
   if(W.inv.schub===undefined) W.inv.schub=0;
   if(W.inv.schaar===undefined) W.inv.schaar=0;
+  for(const k of ['zalm','parel','inktvis']) if(W.inv[k]===undefined) W.inv[k]=0;
+  for(const k of ['totalZalm','totalParel','totalInktvis']) if(W[k]===undefined) W[k]=0;
+  if(W.parelInIJszee===undefined) W.parelInIJszee=false;
   W.hullMax=100+W.ship*25; W.hull=Math.min(W.hull??W.hullMax, W.hullMax);
   if(!W.hull) W.hull=W.hullMax;
   W.questsDone = new Set(d.questsDone||[]);

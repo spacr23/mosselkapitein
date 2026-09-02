@@ -63,6 +63,22 @@ besturing op het scherm:
   sneller. Push je een update? Verhoog `CACHE` in `sw.js` zodat telefoons de
   nieuwe versie ophalen.
 
+## 🧭 De Vier Zeeën
+
+Elke hoek van de oceaan is een eigen biome met eigen vangst en eigen prijzen:
+
+- **❄️ IJszee** (noord): besneeuwde eilanden met dennen, drijvende ijsschotsen en
+  sneeuwval. Vangst: **zalmscholen** die echt rondzwemmen.
+- **🏝️ Parelzee** (oost, tropen): vangst: **pareloesters**, langzaam op te duiken
+  maar kostbaar.
+- **🌫️ Schemerzee** (west, mist): vangst: **inktvis**, alleen 's nachts aan het
+  oppervlak.
+- **🌅 Kustwateren** (centrum): de vertrouwde mosselbanken.
+
+Prijzen verschillen per zee (parels zijn het meest waard in de IJszee, zalm in de
+tropen, inktvis aan de kust), dus verre handelsroutes leveren het meest op. Er
+zijn nieuwe recepten met zalm en inktvis, en vier nieuwe logboek-missies.
+
 ## 🧭 Gameloop
 
 1. **Zoek** mosselbanken met de **sonar** (`F`) — groene blips op de radar.
