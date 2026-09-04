@@ -35,6 +35,7 @@ const W = {
   questsDone: new Set(),
   rescued: 0, treasures: 0, bottles: 0,
   paused: false, started: false, dead: false,
+  dirt: 0,                                      // hull fouling 0..1, scrubbed off in harbour
 };
 
 const SHIPS = [
@@ -44,7 +45,7 @@ const SHIPS = [
   { name: 'Luxe Handelsschip',   icon:'🚢', hold:220, speed:1.6,  price:12000, scale:1.7,  hull:0xb33a3a, style:'trader',  sail:0xf3e2c0 },
   { name: 'Oceaan Trawler',      icon:'🛳️', hold:360, speed:1.85, price:26000, scale:2.0,  hull:0x37506b, style:'trawler', sail:0xcdd6e0 },
   { name: 'Catamaran Racer',     icon:'⛵', hold:150, speed:2.7,  price:42000, scale:1.55, hull:0x18c0b0, style:'cata',    sail:0xffffff },
-  { name: 'Experimenteel Schip', icon:'🛸', hold:600, speed:3.4,  price:90000, scale:2.0,  hull:0x6a3ad0, style:'exp',     sail:0x6fffff },
+  { name: 'Marinefregat M-05',   icon:'⚓', hold:600, speed:3.4,  price:90000, scale:2.0,  hull:0xb4bac0, style:'exp',     sail:0xd7dce0 },
 ];
 
 const WEATHERS = {
@@ -317,6 +318,94 @@ function buildShip(){
   const spec = SHIPS[W.ship];
   const s = spec.scale;
   const style = spec.style||'fisher';
+  let win=null, flag=null;
+
+  if(style==='exp'){
+    // =========== MARINEFREGAT: sleek grey warship (bow = +z) ===========
+    const greyHull=new THREE.MeshStandardMaterial({color:0xb4bac0, roughness:.55, metalness:.35});
+    const greySup =new THREE.MeshStandardMaterial({color:0xc6ccd2, roughness:.6,  metalness:.25});
+    const greyDark=new THREE.MeshStandardMaterial({color:0x3a3f45, roughness:.5,  metalness:.4});
+    // hull with a sharply raked bow and a squared-off stern
+    const hullGeo=new THREE.BoxGeometry(4.6,1.7,15);
+    hullGeo.translate(0,0.25,0);
+    { const p=hullGeo.attributes.position;
+      for(let i=0;i<p.count;i++){
+        const z=p.getZ(i);
+        if(z>4.5){ const f=Math.max(0.04, 1-(z-4.5)/3.4); p.setX(i,p.getX(i)*f); p.setY(i,p.getY(i)*0.9+0.18); }
+        if(z<-6.9){ p.setX(i,p.getX(i)*0.88); }
+      }
+      hullGeo.computeVertexNormals(); }
+    const hull=new THREE.Mesh(hullGeo,greyHull); hull.castShadow=true; shipMesh.add(hull);
+    // main deck
+    const fdeck=new THREE.Mesh(new THREE.BoxGeometry(4.1,0.22,13.6),
+      new THREE.MeshStandardMaterial({color:0x8f969c,roughness:.8})); fdeck.position.y=1.12; shipMesh.add(fdeck);
+    // side rails
+    for(const sx of [-2.12,2.12]){
+      const rail=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.42,12.6),
+        new THREE.MeshStandardMaterial({color:0xd7dce0,roughness:.6}));
+      rail.position.set(sx,1.5,-0.4); shipMesh.add(rail);
+    }
+    // bow gun: mount + turret dome + barrel
+    const gmount=new THREE.Mesh(new THREE.CylinderGeometry(0.95,1.1,0.7,10),greySup);
+    gmount.position.set(0,1.55,4.4); shipMesh.add(gmount);
+    const gdome=new THREE.Mesh(new THREE.SphereGeometry(0.85,10,8,0,Math.PI*2,0,Math.PI/2),greySup);
+    gdome.scale.y=0.9; gdome.position.set(0,1.9,4.4); gdome.castShadow=true; shipMesh.add(gdome);
+    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.10,0.13,2.7,7),greyDark);
+    barrel.rotation.x=Math.PI/2-0.06; barrel.position.set(0,2.25,5.9); shipMesh.add(barrel);
+    // superstructure + bridge
+    const sup=new THREE.Mesh(new THREE.BoxGeometry(3.4,1.9,4.4),greySup);
+    sup.position.set(0,2.25,0.9); sup.castShadow=true; shipMesh.add(sup);
+    const bridge=new THREE.Mesh(new THREE.BoxGeometry(3.0,1.25,2.6),greySup);
+    bridge.position.set(0,3.85,1.5); bridge.castShadow=true; shipMesh.add(bridge);
+    win=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.5,0.08),
+      new THREE.MeshStandardMaterial({color:0x22303c, emissive:0x3a6a88, roughness:.2, metalness:.5}));
+    win.position.set(0,4.05,2.86); shipMesh.add(win);
+    // angular radar tower (4-sided, rotated 45deg) + antenna + panels
+    const tower=new THREE.Mesh(new THREE.CylinderGeometry(0.55,1.3,3.6,4),greySup);
+    tower.rotation.y=Math.PI/4; tower.position.set(0,5.6,-0.6); tower.castShadow=true; shipMesh.add(tower);
+    const ant=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,2.4,6),greyDark);
+    ant.position.set(0,8.4,-0.6); shipMesh.add(ant);
+    for(let k=0;k<4;k++){
+      const pan=new THREE.Mesh(new THREE.BoxGeometry(0.85,0.85,0.1),
+        new THREE.MeshStandardMaterial({color:0x9aa0a8,roughness:.5,metalness:.3}));
+      const a=k*Math.PI/2+Math.PI/4;
+      pan.position.set(Math.cos(a)*0.98, 5.9, -0.6+Math.sin(a)*0.98);
+      pan.rotation.y=-a+Math.PI/2; shipMesh.add(pan);
+    }
+    // radome on a stub mast
+    const rmast=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.17,1.5,6),greySup);
+    rmast.position.set(0,4.6,-2.5); shipMesh.add(rmast);
+    const dome=new THREE.Mesh(new THREE.SphereGeometry(0.72,12,10),
+      new THREE.MeshStandardMaterial({color:0xe9edf0,roughness:.35}));
+    dome.position.set(0,5.6,-2.5); dome.castShadow=true; shipMesh.add(dome);
+    // aft block + flat helideck
+    const aft=new THREE.Mesh(new THREE.BoxGeometry(3.2,1.1,2.6),greySup);
+    aft.position.set(0,1.85,-2.4); shipMesh.add(aft);
+    const heli=new THREE.Mesh(new THREE.BoxGeometry(3.7,0.14,3.2),
+      new THREE.MeshStandardMaterial({color:0x767d84,roughness:.85}));
+    heli.position.set(0,1.5,-5.7); shipMesh.add(heli);
+    // hull number on both sides (canvas, mirrored for port side)
+    const mkNum=(mirror)=>{
+      const c=document.createElement('canvas'); c.width=128; c.height=64;
+      const x=c.getContext('2d');
+      if(mirror){ x.translate(128,0); x.scale(-1,1); }
+      x.font='bold 44px sans-serif'; x.textAlign='center'; x.textBaseline='middle';
+      x.fillStyle='#eef1f4'; x.fillText('M 05',64,34);
+      const t=new THREE.CanvasTexture(c); t.anisotropy=4; return t;
+    };
+    for(const side of [1,-1]){
+      const num=new THREE.Mesh(new THREE.PlaneGeometry(2.3,1.15),
+        new THREE.MeshBasicMaterial({map:mkNum(false), transparent:true}));
+      num.position.set(side*2.33,0.72,3.1); num.rotation.y=side*Math.PI/2; shipMesh.add(num);
+    }
+    // stern mast + the fleet's gold flag
+    const smast=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,2.4,6),greyDark);
+    smast.position.set(0,2.8,-6.9); shipMesh.add(smast);
+    flag=new THREE.Mesh(new THREE.PlaneGeometry(1.6,0.85),
+      new THREE.MeshStandardMaterial({color:0xffd34d, side:THREE.DoubleSide, roughness:.7}));
+    flag.position.set(0.8,3.6,-6.9); shipMesh.add(flag);
+    shipMesh.userData.flag=flag;
+  } else {
 
   // ----- hull (twin hull for catamaran) -----
   if(style==='cata'){
@@ -344,21 +433,20 @@ function buildShip(){
     new THREE.MeshStandardMaterial({color:0xf5f5f0, roughness:.6}));
   cabin.position.set(0, lowCab?1.9:2.3, lowCab?0.6:1.8); cabin.castShadow=true; shipMesh.add(cabin);
   const roof = new THREE.Mesh(new THREE.BoxGeometry(3.4,0.3, lowCab?2.8:3.8),
-    new THREE.MeshStandardMaterial({color: style==='exp'?0x2affff:0xd0453a, roughness:.5,
-      emissive: style==='exp'?0x1a8a8a:0x000000, emissiveIntensity: style==='exp'?0.8:0}));
+    new THREE.MeshStandardMaterial({color:0xd0453a, roughness:.5}));
   roof.position.set(0, lowCab?2.6:3.45, cabin.position.z); shipMesh.add(roof);
-  const win = new THREE.Mesh(new THREE.BoxGeometry(2.4,0.9,0.1),
+  win = new THREE.Mesh(new THREE.BoxGeometry(2.4,0.9,0.1),
     new THREE.MeshStandardMaterial({color:0x6fd0ff, emissive:0x224455, roughness:.2, metalness:.4}));
   win.position.set(0, cabin.position.y+0.3, cabin.position.z-cabin.geometry.parameters.depth/2-0.02); shipMesh.add(win);
 
   // ----- mast, sail & flag -----
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16, style==='exp'?5:7,8),
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16, 7,8),
     new THREE.MeshStandardMaterial({color:0x9a6b3a}));
   mast.position.set(0,4.0,-1.2); mast.castShadow=true; shipMesh.add(mast);
   if(style==='cutter'||style==='cata'||style==='trader'){
     const sail=makeSail(spec.sail,3.4,4.6); sail.position.set(0,4.2,-1.0); shipMesh.add(sail);
   }
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(2.2,1.1),
+  flag = new THREE.Mesh(new THREE.PlaneGeometry(2.2,1.1),
     new THREE.MeshStandardMaterial({color:0xffd34d, side:THREE.DoubleSide, roughness:.7}));
   flag.position.set(1.1,6.6,-1.2); shipMesh.add(flag);
   shipMesh.userData.flag = flag;
@@ -371,6 +459,7 @@ function buildShip(){
       crate.position.set((Math.random()-0.5)*1.6,1.9,cz); crate.castShadow=true; shipMesh.add(crate);
     }
   }
+  } // end standard-ship branch
 
   // ----- harvester arm (animated when fishing) -----
   const arm = new THREE.Group();
@@ -385,14 +474,6 @@ function buildShip(){
   dredge.position.set(0,1.0,-7.2); arm.add(dredge);
   shipMesh.userData.arm=arm; shipMesh.userData.dredge=dredge;
   shipMesh.add(arm);
-
-  // ----- experimental hover glow -----
-  if(style==='exp'){
-    const ring=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.18,8,32),
-      new THREE.MeshStandardMaterial({color:0x6fffff, emissive:0x2affff, emissiveIntensity:1.2}));
-    ring.rotation.x=Math.PI/2; ring.position.y=0.5; shipMesh.add(ring);
-    shipMesh.userData.ring=ring;
-  }
 
   // ----- the captain himself: steps onto the foredeck during monster fights -----
   const cap=new THREE.Group();
@@ -431,7 +512,8 @@ function buildShip(){
   muzzle.position.z=2.75; muzzle.visible=false; rifle.add(muzzle);
   rifle.position.set(0.15,2.5,0.65);
   cap.add(rifle);
-  cap.position.set(0,1.3,-3.2);   // foredeck
+  if(style==='exp') cap.position.set(1.25,1.3,3.6);   // frigate: beside the bow gun
+  else cap.position.set(0,1.3,-3.2);                   // open working deck
   cap.visible=false;
   shipMesh.add(cap);
   shipMesh.userData.captain=cap; shipMesh.userData.rifle=rifle; shipMesh.userData.muzzle=muzzle;
@@ -454,8 +536,26 @@ function buildShip(){
   // cabin window can glow too
   shipMesh.userData.win=win;
 
+  // remember every paintable surface so grime can tint the whole ship
+  const dirtMats=[];
+  shipMesh.traverse(o=>{
+    if(o.isMesh && o.material && o.material.color && !o.material.map){
+      const e=o.material.emissive;
+      if(!e || e.getHex()===0 || o.material.emissiveIntensity===0)
+        dirtMats.push({mat:o.material, base:o.material.color.clone()});
+    }
+  });
+  shipMesh.userData.dirtMats=dirtMats;
+
   shipMesh.scale.setScalar(s);
   ship.add(shipMesh);
+}
+// grime slowly browns the ship; a harbour scrub restores her
+const GRIME=new THREE.Color(0x4e4a38);
+function updateShipDirt(){
+  if(!shipMesh || !shipMesh.userData.dirtMats) return;
+  const k=W.dirt*0.55;
+  for(const d of shipMesh.userData.dirtMats) d.mat.color.copy(d.base).lerp(GRIME,k);
 }
 // Fade the ship's lights in as dusk falls (0 = broad daylight, 1 = full dark)
 function updateShipLights(nightAmt){
@@ -2152,7 +2252,7 @@ function tabMarkt(h){
       <button class="btn" onclick="window.__buyChart()">Koop <span class="price">150 🪙</span></button></div>
     <div class="card2"><h3>🪝 Aas-emmer</h3><p>Lokt direct een verse mosselbank vlak naast je schip.</p>
       <button class="btn" onclick="window.__buyBait()">Koop <span class="price">80 🪙</span></button></div>
-    <div class="card2"><h3>🛠️ Reparatie & Proviand</h3><p>Herstel je romp volledig. Zonder romp zinkt je schip en ben je je voortgang kwijt!</p>
+    <div class="card2"><h3>🛠️ Reparatie & Proviand</h3><p>Herstel je romp volledig en schrob de aangroei van de scheepshuid (een vieze romp maakt je tot 10% trager). Zonder romp zink je!</p>
       <button class="btn alt" onclick="window.__repair()">Onderhoud <span class="price">40 🪙</span></button></div>
     <div class="card2"><h3>🌦️ Weersmachine brandstof</h3><p>${W.hasWeatherMachine?'Lokt beter weer voor 1 cyclus.':'Vereist Weersmachine (Werf).'}</p>
       <button class="btn" ${W.hasWeatherMachine?'':'disabled'} onclick="window.__buyWeatherFuel()">Koop <span class="price">120 🪙</span></button></div>
@@ -2274,8 +2374,9 @@ window.__buyChart=()=>{ if(W.gold<150)return; W.gold-=150; const bi=curHarbor.bi
 window.__buyBait=()=>{ if(W.gold<80)return; W.gold-=80;
   const a=Math.random()*6.28; spawnBed(shipState.x+Math.cos(a)*30, shipState.z+Math.sin(a)*30,{}).pingUntil=sonarNow()+PING_HOLD;
   toast('🪝 Een verse mosselbank verschijnt vlakbij!','good'); renderHarbor(); updateHUD(); };
-window.__repair=()=>{ if(W.gold<40)return; W.gold-=40; W.hull=W.hullMax;
-  toast('🛠️ Romp volledig hersteld!','good'); renderHarbor(); updateHUD(); };
+window.__repair=()=>{ if(W.gold<40)return; W.gold-=40; W.hull=W.hullMax; W.dirt=0; W._dirtWarned=false;
+  updateShipDirt();
+  toast('🛠️ Romp hersteld en schoongeschrobd, ze glimt weer!','good'); renderHarbor(); updateHUD(); };
 window.__buyWeatherFuel=()=>{ if(W.gold<120||!W.hasWeatherMachine)return; W.gold-=120; setWeather(pick(['clear','clear','cloudy']),true);
   toast('🌦️ Weersmachine: het weer klaart op!','good'); renderHarbor(); updateHUD(); };
 window.__upg=(k,price)=>{
@@ -2783,6 +2884,13 @@ function stepSim(dt){
   let maxSpeed = 36 * spec.speed * (1 + (W.engineLvl-1)*0.32) * (1+(W.skills.navigatie-1)*0.06);
   if(W.buffs.snelheid) maxSpeed*=1.6;
   if(W.buffs.spookvloek) maxSpeed*=0.6;   // ghost-ship curse until it wears off
+  // fouling: the hull picks up grime while under way and it costs you speed
+  if(Math.abs(shipState.speed)>3 && !W.dead){
+    W.dirt=Math.min(1, W.dirt+dt*0.003);
+    if(W.dirt>0.8 && !W._dirtWarned){ W._dirtWarned=true;
+      toast('🧽 Je romp zit vol aangroei en wier! Laat hem schoonmaken in een haven (Onderhoud).','bad'); }
+  }
+  maxSpeed *= 1 - W.dirt*0.10;
   // boost: hold Shift (or the ⚡ button) for a burst of speed
   const boosting = !!(keys['shift'] || touchCtrl.boost) && shipState.throttle>0.2;
   if(boosting) maxSpeed*=1.55;
@@ -2871,6 +2979,8 @@ function stepSim(dt){
   if((keys[' ']) ) { if(!harvesting) startHarvest(); }
   else if(harvesting && !nearestBed()) { harvesting=false; }
   doHarvest(dt);
+
+  updateShipDirt();
 
   // ---- wake ----
   updateWake(dt);
@@ -3383,6 +3493,7 @@ function serializeSave(){
     rescued:W.rescued, treasures:W.treasures, bottles:W.bottles,
     totalCaught:W.totalCaught, totalCooked:W.totalCooked, totalEarned:W.totalEarned, totalGold:W.totalGold,
     totalZalm:W.totalZalm, totalParel:W.totalParel, totalInktvis:W.totalInktvis, parelInIJszee:W.parelInIJszee,
+    dirt:W.dirt,
     islandsVisited: islandMeshes.map(i=>!!i.visited),
     ship_x:shipState.x, ship_z:shipState.z, ship_h:shipState.heading,
   };
@@ -3408,7 +3519,7 @@ function applySave(d){
     'serpentsSlain','serpentGoneUntilDay','ghostsLooted','crabsSlain','crabNextDay',
     'seagullName','aquarium','time','day','rescued','treasures','bottles',
     'totalCaught','totalCooked','totalEarned','totalGold',
-    'totalZalm','totalParel','totalInktvis','parelInIJszee'];
+    'totalZalm','totalParel','totalInktvis','parelInIJszee','dirt'];
   for(const k of keys){ if(d[k]!==undefined) W[k]=d[k]; }
   if(W.inv.krakeninkt===undefined) W.inv.krakeninkt=0;
   if(W.inv.schub===undefined) W.inv.schub=0;
@@ -3416,6 +3527,7 @@ function applySave(d){
   for(const k of ['zalm','parel','inktvis']) if(W.inv[k]===undefined) W.inv[k]=0;
   for(const k of ['totalZalm','totalParel','totalInktvis']) if(W[k]===undefined) W[k]=0;
   if(W.parelInIJszee===undefined) W.parelInIJszee=false;
+  if(W.dirt===undefined) W.dirt=0;
   W.hullMax=100+W.ship*25; W.hull=Math.min(W.hull??W.hullMax, W.hullMax);
   if(!W.hull) W.hull=W.hullMax;
   W.questsDone = new Set(d.questsDone||[]);
