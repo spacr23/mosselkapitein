@@ -36,6 +36,8 @@ const W = {
   rescued: 0, treasures: 0, bottles: 0,
   paused: false, started: false, dead: false,
   dirt: 0,                                      // hull fouling 0..1, scrubbed off in harbour
+  totalSold: 0,
+  dishQual: {},
 };
 
 const SHIPS = [
@@ -576,15 +578,15 @@ scene.add(wake.points);
 //  5. WORLD: harbors, islands, mussel beds, points of interest
 // ============================================================================
 const HARBORS = [
-  { name:'Mosselhaven', x:0,     z:160,   biome:'kust',    icon:'🏘️', demand:1.0,  color:0xff9d4d, r:42 },
-  { name:'Zonnebaai',   x:680,   z:420,   biome:'kust',    icon:'⛵', demand:1.15, color:0xffc24d, r:36 },
-  { name:'Gouddok',     x:900,   z:-760,  biome:'kust',    icon:'👑', demand:1.5,  color:0xffd34d, r:50 },
-  { name:'Noorderkaap', x:-560,  z:-1200, biome:'storm',   icon:'🏚️', demand:1.45, color:0x9fb4c4, r:44 },
-  { name:'IJszicht',    x:520,   z:-1750, biome:'storm',   icon:'🗼', demand:1.7,  color:0xbfe3ff, r:40 },
-  { name:'Palmbaai',    x:1650,  z:560,   biome:'tropisch',icon:'🏝️', demand:1.25, color:0x5bd97a, r:48 },
-  { name:'Verre Rede',  x:2100,  z:-1500, biome:'tropisch',icon:'🌴', demand:1.75, color:0xff7bd0, r:42 },
-  { name:'Neveldorp',   x:-1650, z:420,   biome:'mist',    icon:'⚓', demand:1.35, color:0xb9c6cf, r:42 },
-  { name:'Schemerkade', x:-2050, z:-1000, biome:'mist',    icon:'🏰', demand:1.6,  color:0x9a86c8, r:46 },
+  { name:'Mosselhaven', x:0,     z:160,   icon:'🏘️', demand:1.0,  color:0xff9d4d, r:42 },
+  { name:'Zonnebaai',   x:680,   z:420,   icon:'⛵', demand:1.15, color:0xffc24d, r:36 },
+  { name:'Gouddok',     x:900,   z:-760,  icon:'👑', demand:1.5,  color:0xffd34d, r:50 },
+  { name:'Noorderkaap', x:-560,  z:-1200, icon:'🏚️', demand:1.45, color:0x9fb4c4, r:44 },
+  { name:'IJszicht',    x:520,   z:-1750, icon:'🗼', demand:1.7,  color:0xbfe3ff, r:40 },
+  { name:'Palmbaai',    x:1650,  z:560,   icon:'🏝️', demand:1.25, color:0x5bd97a, r:48 },
+  { name:'Verre Rede',  x:2100,  z:-1500, icon:'🌴', demand:1.75, color:0xff7bd0, r:42 },
+  { name:'Neveldorp',   x:-1650, z:420,   icon:'⚓', demand:1.35, color:0xb9c6cf, r:42 },
+  { name:'Schemerkade', x:-2050, z:-1000, icon:'🏰', demand:1.6,  color:0x9a86c8, r:46 },
 ];
 const ISLANDS = [
   { name:'Schateiland',   x:-240, z:560,  r:46, treasure:true,  visited:false },
@@ -813,7 +815,7 @@ const floes=[];
     const m=new THREE.Mesh(new THREE.CylinderGeometry(r, r*1.12, 1.1, 7), floeMat);
     m.scale.set(1, 1, 0.65+Math.random()*0.5);
     m.rotation.y=Math.random()*6.28;
-    const x=(Math.random()-0.5)*5000, z=-1250-Math.random()*1500;
+    const x=(Math.random()-0.5)*2000, z=-1250-Math.random()*1500;   // IJszee spans x -1000..1000
     m.position.set(x, 0, z);
     scene.add(m);
     floes.push({mesh:m, x, z, spin:(Math.random()-0.5)*0.05, drift:2+Math.random()*3});
@@ -1012,9 +1014,12 @@ function spawnBed(x,z,opts={}){
   return bed;
 }
 function biomeAt(x,z){
-  if(z < -850) return 'storm';
+  // East/west must win over north so the NE/NW corners match the four seas
+  // (and the map tints). Checking z first made Verre Rede and Schemerkade
+  // spawn ice catch while paying tropical/mist prices.
   if(x > 1000) return 'tropisch';
   if(x < -1000) return 'mist';
+  if(z < -850) return 'storm';
   return 'kust';
 }
 // pick a bed kind that suits the local sea
@@ -1431,8 +1436,8 @@ function updateSerpent(dt){
     // stay inside the storm zone
     if(serpent.z>-1000) serpent.heading=Math.PI+((Math.random()-0.5)*0.6), serpent.z=-1000;
     if(serpent.z<-2700) serpent.z=-2700, serpent.heading=(Math.random()-0.5)*0.6;
-    if(serpent.x>1400) serpent.x=1400, serpent.heading=-Math.PI/2;
-    if(serpent.x<-1400) serpent.x=-1400, serpent.heading=Math.PI/2;
+    if(serpent.x>1000) serpent.x=1000, serpent.heading=-Math.PI/2;     // stay out of the Parelzee corner
+    if(serpent.x<-1000) serpent.x=-1000, serpent.heading=Math.PI/2;    // and out of the Schemerzee corner
     // spot the player
     const d2=dist2(shipState.x,shipState.z,serpent.x,serpent.z);
     if(d2<90*90) serpent.known=true;
@@ -2052,11 +2057,23 @@ const RECIPES=[
   {name:'Zwarte-inktrisotto',   icon:'🍚', need:6,  base:600,  skill:4, inktvisNeed:4},
   {name:'Keizers Banket',       icon:'👑', need:34, base:1600, skill:7, goldNeed:3, exootNeed:2},
 ];
-function dishPrice(r,harbor){
+function dishPrice(r,harbor,qual=1){
   let p=r.base*harbor.demand*(1+(W.skills.handel-1)*0.1);
   if(W.buffs.prijs) p*=1.3;
+  const q=Math.max(0, Math.min(1, +qual || 0));
+  p *= 0.7 + 0.5*q;                      // 0.7× botched timing → 1.2× perfect
   return Math.round(p);
 }
+function peekDishQual(name){
+  const arr=W.dishQual && W.dishQual[name];
+  return (arr && arr.length) ? arr[0] : 0.75;
+}
+function takeDishQual(name){
+  const arr=W.dishQual && W.dishQual[name];
+  if(arr && arr.length) return arr.shift();
+  return 0.75;
+}
+function harborBiome(h){ return h ? biomeAt(h.x, h.z) : 'kust'; }
 
 // ============================================================================
 //  9. RPG: XP / levels / skills
@@ -2084,12 +2101,12 @@ function gainSkill(name,n){
 //  10. QUESTS / LOGBOOK
 // ============================================================================
 const QUESTS=[
-  {id:'q1', t:'Vang je eerste 5 mosselen',     check:()=>W.inv.mossel+W.totalCaught>=5 || W.totalCaught>=5, reward:80},
+  {id:'q1', t:'Vang je eerste 5 mosselen',     check:()=>W.totalCaught>=5, reward:80},
   {id:'q2', t:'Kook je eerste gerecht',        check:()=>W.totalCooked>=1, reward:120},
-  {id:'q3', t:'Verkoop voor 200 🪙',           check:()=>W.totalEarned>=200, reward:150},
+  {id:'q3', t:'Verkoop voor 200 🪙',           check:()=>W.totalSold>=200, reward:150},
   {id:'q4', t:'Ontdek een verborgen eiland',   check:()=>W.treasures>=1, reward:200},
   {id:'q5', t:'Red een gestrande zeeman',      check:()=>W.rescued>=1, reward:200},
-  {id:'q6', t:'Vang een gouden mossel',        check:()=>W.inv.goudmossel+W.totalGold>=1, reward:300},
+  {id:'q6', t:'Vang een gouden mossel',        check:()=>W.totalGold>=1, reward:300},
   {id:'q7', t:'Bereik kapitein-niveau 5',      check:()=>W.level>=5, reward:400},
   {id:'q8', t:'Koop een groter schip',         check:()=>W.ship>=1, reward:500},
   {id:'q9', t:'Rust een harpoenkanon uit',     check:()=>W.hasHarpoon, reward:200},
@@ -2102,7 +2119,8 @@ const QUESTS=[
   {id:'q16',t:'Vang 5 inktvissen bij nacht',    check:()=>W.totalInktvis>=5, reward:300},
   {id:'q17',t:'Verkoop een parel in de IJszee', check:()=>W.parelInIJszee, reward:400},
 ];
-W.totalCaught=0; W.totalCooked=0; W.totalEarned=0; W.totalGold=0;
+W.totalCaught=0; W.totalCooked=0; W.totalEarned=0; W.totalSold=0; W.totalGold=0;
+W.dishQual={};
 W.totalZalm=0; W.totalParel=0; W.totalInktvis=0; W.parelInIJszee=false;
 function checkQuests(){
   for(const q of QUESTS){
@@ -2191,7 +2209,7 @@ function renderHarbor(){
   openModal(`
     <button class="closeX" onclick="window.__close()">✕</button>
     <h2>${h.icon} ${h.name}</h2>
-    <div class="sub">Biome: ${biomeLabel(h.biome)} · Vraag ×${h.demand.toFixed(1)} · Jouw 🪙 ${Math.floor(W.gold)}</div>
+    <div class="sub">Biome: ${biomeLabel(harborBiome(h))} · Vraag ×${h.demand.toFixed(1)} · Jouw 🪙 ${Math.floor(W.gold)}</div>
     <div class="tabs">${tabs.map(t=>`<div class="tab ${curTab===t[0]?'active':''}" onclick="window.__tab('${t[0]}')">${t[1]}</div>`).join('')}</div>
     <div id="modalBody">${body}</div>
   `);
@@ -2205,7 +2223,7 @@ const PRODUCT_PRICES={
 };
 function productPrice(kind,harbor){
   const p=PRODUCT_PRICES[kind]; if(!p) return 0;
-  let v=p.base*(p[harbor.biome]||1)*harbor.demand*(1+(W.skills.handel-1)*0.08);
+  let v=p.base*(p[harborBiome(harbor)]||1)*harbor.demand*(1+(W.skills.handel-1)*0.08);
   if(W.buffs.prijs) v*=1.3;
   return Math.round(v);
 }
@@ -2225,7 +2243,7 @@ function tabVerkoop(h){
   let dishRows='';
   for(const r of RECIPES){
     const c=W.dishes[r.name]||0; if(c<=0) continue;
-    dishRows+=invRow(`${r.icon} ${r.name}`, c, dishPrice(r,h), ()=>`window.__sellDish('${r.name}')`);
+    dishRows+=invRow(`${r.icon} ${r.name}`, c, dishPrice(r,h,peekDishQual(r.name)), ()=>`window.__sellDish('${r.name}')`);
   }
   return `
     <div class="grid"><div class="card2" style="grid-column:1/-1">
@@ -2265,7 +2283,7 @@ function tabKombuis(h){
     const enough=W.inv.mossel>=r.need && (!r.goldNeed||W.inv.goudmossel>=r.goldNeed) && (!r.exootNeed||W.inv.exoot>=r.exootNeed) && (!r.zalmNeed||W.inv.zalm>=r.zalmNeed) && (!r.inktvisNeed||W.inv.inktvis>=r.inktvisNeed);
     cards+=`<div class="card2">
       <h3>${r.icon} ${r.name} ${locked?`<span class="lvltag">Koken Lv.${r.skill}</span>`:''}</h3>
-      <p>Nodig: ${r.need}× 🦪 ${r.goldNeed?`+ ${r.goldNeed}× 🌟`:''}${r.exootNeed?` + ${r.exootNeed}× 🐠`:''}${r.zalmNeed?` + ${r.zalmNeed}× 🐟`:''}${r.inktvisNeed?` + ${r.inktvisNeed}× 🦑`:''}<br>Verkoopwaarde ~<span class="price">${dishPrice(r,h)} 🪙</span></p>
+      <p>Nodig: ${r.need}× 🦪 ${r.goldNeed?`+ ${r.goldNeed}× 🌟`:''}${r.exootNeed?` + ${r.exootNeed}× 🐠`:''}${r.zalmNeed?` + ${r.zalmNeed}× 🐟`:''}${r.inktvisNeed?` + ${r.inktvisNeed}× 🦑`:''}<br>Verkoopwaarde ~<span class="price">${dishPrice(r,h,0.6)} tot ${dishPrice(r,h,1)} 🪙</span> (afhankelijk van je timing)</p>
       <button class="btn" ${locked||!enough?'disabled':''} onclick="window.__cook('${r.name}')">${locked?'🔒 Vergrendeld':(enough?'👨‍🍳 Koken (minigame)':'Te weinig ingrediënten')}</button>
     </div>`;
   }
@@ -2335,8 +2353,8 @@ window.__sell=kind=>{
   if(W.inv[kind]<=0) return;
   let price = kind==='goudmossel'? musselPrice(curHarbor)*8 : kind==='exoot'? 60 : kind==='krakeninkt'? 220 : kind==='schub'? 150 : kind==='schaar'? 180
     : PRODUCT_PRICES[kind]? productPrice(kind,curHarbor) : musselPrice(curHarbor);
-  if(kind==='parel' && curHarbor.biome==='storm') W.parelInIJszee=true;
-  W.inv[kind]--; W.gold+=price; W.totalEarned+=price; gainSkill('handel',1.2);
+  if(kind==='parel' && harborBiome(curHarbor)==='storm') W.parelInIJszee=true;
+  W.inv[kind]--; W.gold+=price; W.totalEarned+=price; W.totalSold+=price; gainSkill('handel',1.2);
   beep(720,.05); renderHarbor(); updateHUD(); checkQuests();
 };
 window.__sellAll=()=>{
@@ -2346,10 +2364,10 @@ window.__sellAll=()=>{
     + W.inv.inktvis*productPrice('inktvis',curHarbor)
     + W.inv.krakeninkt*220 + W.inv.schub*150 + W.inv.schaar*180;
   if(tot<=0) return;
-  if(W.inv.parel>0 && curHarbor.biome==='storm') W.parelInIJszee=true;
+  if(W.inv.parel>0 && harborBiome(curHarbor)==='storm') W.parelInIJszee=true;
   const items=W.inv.mossel+W.inv.goudmossel+W.inv.exoot+W.inv.zalm+W.inv.parel+W.inv.inktvis
     +W.inv.krakeninkt+W.inv.schub+W.inv.schaar;
-  W.totalEarned+=tot; W.gold+=tot;
+  W.totalEarned+=tot; W.totalSold+=tot; W.gold+=tot;
   gainSkill('handel', items*0.5);
   W.inv.mossel=0; W.inv.goudmossel=0; W.inv.exoot=0; W.inv.zalm=0; W.inv.parel=0; W.inv.inktvis=0;
   W.inv.krakeninkt=0; W.inv.schub=0; W.inv.schaar=0;
@@ -2358,18 +2376,22 @@ window.__sellAll=()=>{
 };
 window.__sellDish=name=>{
   if((W.dishes[name]||0)<=0) return;
-  const r=RECIPES.find(x=>x.name===name); const p=dishPrice(r,curHarbor);
-  W.dishes[name]--; W.gold+=p; W.totalEarned+=p; gainSkill('handel',2);
+  const r=RECIPES.find(x=>x.name===name); const p=dishPrice(r,curHarbor,takeDishQual(name));
+  W.dishes[name]--; W.gold+=p; W.totalEarned+=p; W.totalSold+=p; gainSkill('handel',2);
   beep(784,.06); renderHarbor(); updateHUD(); checkQuests();
 };
 window.__sellDishesAll=()=>{
   let tot=0;
-  for(const r of RECIPES){ const c=W.dishes[r.name]||0; if(c>0){ tot+=c*dishPrice(r,curHarbor); W.dishes[r.name]=0; } }
-  if(tot<=0) return; W.gold+=tot; W.totalEarned+=tot; gainSkill('handel',4);
+  for(const r of RECIPES){
+    const c=W.dishes[r.name]||0; if(c<=0) continue;
+    for(let i=0;i<c;i++) tot+=dishPrice(r,curHarbor,takeDishQual(r.name));
+    W.dishes[r.name]=0;
+  }
+  if(tot<=0) return; W.gold+=tot; W.totalEarned+=tot; W.totalSold+=tot; gainSkill('handel',4);
   toast(`🍽️ Alle gerechten verkocht: ${Math.floor(tot)} 🪙`,'good');
   renderHarbor(); updateHUD(); checkQuests();
 };
-window.__buyChart=()=>{ if(W.gold<150)return; W.gold-=150; const bi=curHarbor.biome; let n=0;
+window.__buyChart=()=>{ if(W.gold<150)return; W.gold-=150; const bi=harborBiome(curHarbor); let n=0;
   for(const b of beds){ if(b.biome===bi){ b.charted=true; n++; } } toast(`🗺️ Kaart onthult ${n} banken in dit biome.`,'good'); renderHarbor(); updateHUD(); };
 window.__buyBait=()=>{ if(W.gold<80)return; W.gold-=80;
   const a=Math.random()*6.28; spawnBed(shipState.x+Math.cos(a)*30, shipState.z+Math.sin(a)*30,{}).pingUntil=sonarNow()+PING_HOLD;
@@ -2572,17 +2594,20 @@ function finishCook(){
   const r=cookGame.recipe;
   W.inv.mossel-=r.need; if(r.goldNeed) W.inv.goudmossel-=r.goldNeed; if(r.exootNeed) W.inv.exoot-=r.exootNeed; if(r.zalmNeed) W.inv.zalm-=r.zalmNeed; if(r.inktvisNeed) W.inv.inktvis-=r.inktvisNeed;
   cookGame.active=false;
-  const qual = cookQuality/cookGame.need; // ~0..1
+  const qual = Math.max(0, Math.min(1, cookQuality/cookGame.need)); // ~0..1
   cookQuality=0;
   W.dishes[r.name]=(W.dishes[r.name]||0)+1;
+  if(!W.dishQual[r.name]) W.dishQual[r.name]=[];
+  W.dishQual[r.name].push(qual);
   W.totalCooked++;
   gainSkill('koken', 3 + (cookGame.contest?3:0));
+  const sellHint = curHarbor ? ` ~${dishPrice(r,curHarbor,qual)} 🪙 hier` : '';
   if(cookGame.contest){
     const prize = Math.round(200 + qual*400);
     W.gold+=prize; W.totalEarned+=prize;
     toast(`🏆 Kookwedstrijd! Kwaliteit ${(qual*100|0)}% → +${prize} 🪙 en 1× ${r.name}`,'gold');
   } else {
-    toast(`🍽️ ${r.name} bereid! Kwaliteit ${(qual*100|0)}%. Verkoop 'm in Verkoop.`,'good');
+    toast(`🍽️ ${r.name} bereid! Kwaliteit ${(qual*100|0)}%.${sellHint}`,'good');
   }
   gainXP(35);
   updateHUD(); checkQuests();
@@ -2999,7 +3024,7 @@ function stepSim(dt){
   // ---- POI bob ----
   for(const bt of bottles) bt.mesh.position.y=waveHeight(bt.x,bt.z,t,sc)+0.3;
   for(const fl of floes){
-    fl.x+=fl.drift*dt*0.4; if(fl.x>2800) fl.x=-2800;
+    fl.x+=fl.drift*dt*0.4; if(fl.x>1000) fl.x=-1000;
     fl.mesh.position.set(fl.x, waveHeight(fl.x,fl.z,t,sc)*0.6-0.2, fl.z);
     fl.mesh.rotation.y+=fl.spin*dt;
   }
@@ -3013,7 +3038,7 @@ function stepSim(dt){
       b.x += Math.sin(b.heading)*spd*dt; b.z += Math.cos(b.heading)*spd*dt;
       if(b.z>-950){ b.z=-950; b.heading=Math.PI+(Math.random()-0.5); }       // stay in the cold sea
       if(b.z<-2750) b.z=-2750, b.heading=(Math.random()-0.5);
-      if(Math.abs(b.x)>2750) b.x=Math.sign(b.x)*2750, b.heading=-b.heading;
+      if(Math.abs(b.x)>1000) b.x=Math.sign(b.x)*1000, b.heading=-b.heading;   // IJszee is only the middle north
       b.group.position.set(b.x,-1.2,b.z);
       b.group.children.forEach((c,i)=>{ c.rotation.y=b.heading+Math.PI; c.position.y=-0.4+Math.sin(t*3+i)*0.35; });
       if(Math.random()<dt*0.7) splash(b.x+(Math.random()-0.5)*6, b.z+(Math.random()-0.5)*6);
@@ -3480,7 +3505,7 @@ function serializeSave(){
   return { v:1,
     gold:W.gold, level:W.level, xp:W.xp, xpNext:W.xpNext,
     skills:W.skills, skillXp:W.skillXp,
-    inv:W.inv, dishes:W.dishes,
+    inv:W.inv, dishes:W.dishes, dishQual:W.dishQual,
     ship:W.ship, holdMax:W.holdMax,
     engineLvl:W.engineLvl, harvestLvl:W.harvestLvl, sonarLvl:W.sonarLvl,
     hasWeatherMachine:W.hasWeatherMachine, hasSeagull:W.hasSeagull, hasRestaurant:W.hasRestaurant,
@@ -3491,7 +3516,7 @@ function serializeSave(){
     time:W.time, day:W.day,
     questsDone:[...W.questsDone],
     rescued:W.rescued, treasures:W.treasures, bottles:W.bottles,
-    totalCaught:W.totalCaught, totalCooked:W.totalCooked, totalEarned:W.totalEarned, totalGold:W.totalGold,
+    totalCaught:W.totalCaught, totalCooked:W.totalCooked, totalEarned:W.totalEarned, totalSold:W.totalSold, totalGold:W.totalGold,
     totalZalm:W.totalZalm, totalParel:W.totalParel, totalInktvis:W.totalInktvis, parelInIJszee:W.parelInIJszee,
     dirt:W.dirt,
     islandsVisited: islandMeshes.map(i=>!!i.visited),
@@ -3513,12 +3538,12 @@ function loadGame(){
 function applySave(d){
   if(!d || d.v!==1) return false;
   // scalars & objects
-  const keys=['gold','level','xp','xpNext','skills','skillXp','inv','dishes','ship','holdMax',
+  const keys=['gold','level','xp','xpNext','skills','skillXp','inv','dishes','dishQual','ship','holdMax',
     'engineLvl','harvestLvl','sonarLvl','hasWeatherMachine','hasSeagull','hasRestaurant',
     'hasHarpoon','hull','krakensSlain','krakenGoneUntilDay',
     'serpentsSlain','serpentGoneUntilDay','ghostsLooted','crabsSlain','crabNextDay',
     'seagullName','aquarium','time','day','rescued','treasures','bottles',
-    'totalCaught','totalCooked','totalEarned','totalGold',
+    'totalCaught','totalCooked','totalEarned','totalSold','totalGold',
     'totalZalm','totalParel','totalInktvis','parelInIJszee','dirt'];
   for(const k of keys){ if(d[k]!==undefined) W[k]=d[k]; }
   if(W.inv.krakeninkt===undefined) W.inv.krakeninkt=0;
@@ -3528,6 +3553,8 @@ function applySave(d){
   for(const k of ['totalZalm','totalParel','totalInktvis']) if(W[k]===undefined) W[k]=0;
   if(W.parelInIJszee===undefined) W.parelInIJszee=false;
   if(W.dirt===undefined) W.dirt=0;
+  if(!W.dishQual) W.dishQual={};
+  if(W.totalSold===undefined) W.totalSold=0;
   W.hullMax=100+W.ship*25; W.hull=Math.min(W.hull??W.hullMax, W.hullMax);
   if(!W.hull) W.hull=W.hullMax;
   W.questsDone = new Set(d.questsDone||[]);
@@ -3615,7 +3642,7 @@ window.getShipMesh=()=>shipMesh;
 window.music=music; window.mapView=mapView; window.drawBigMap=drawBigMap;
 window.sonarPing=sonarPing; window.bedVisible=bedVisible; window.sonarNow=sonarNow;
 window.oceanUniforms=oceanUniforms; window.damageHull=damageHull; window.sinkShip=sinkShip;
-window.toast=toast;
+window.toast=toast; window.renderer=renderer; window.scene=scene;
 
 // Restore a previous save (if any) and adjust the title screen accordingly
 if(hasSave()){
