@@ -43,6 +43,10 @@ const W = {
   dirt: 0,                                      // hull fouling 0..1, scrubbed off in harbour
   totalSold: 0,
   dishQual: {},
+  fame: 0, legendShown: false,                  // roem uit contracten, missies en monsters
+  contracts: [], contractsDone: [], contractsDelivered: 0,
+  contractSeed: Math.floor(Math.random()*1e9),  // maakt het dagelijkse aanbod per reis anders
+  market: {}, boom: null,                       // verzadiging per haven/product + vraagpiek
 };
 
 const SHIPS = [
@@ -1414,7 +1418,7 @@ function krakenDefeated(){
   kraken.state='dying'; kraken.lootDropped=false;
   const ink=4+Math.floor(W.level/3); W.inv.krakeninkt+=ink;
   const gold=1500+W.level*80; W.gold+=gold; W.totalEarned+=gold;
-  W.krakensSlain++; W.krakenGoneUntilDay=W.day+4;
+  W.krakensSlain++; W.krakenGoneUntilDay=W.day+4; gainFame(30,'Kraken verslagen');
   toast(`🏆 KRAKEN VERSLAGEN! +${ink}× 🖋️ krakeninkt, +${gold} 🪙 en dikke roem!`,'gold');
   gainXP(300); confettiBurst(kraken.x,kraken.z);
   beep(523,.14); setTimeout(()=>beep(659,.14),150); setTimeout(()=>beep(784,.2),320); setTimeout(()=>beep(1047,.3),520);
@@ -1534,7 +1538,7 @@ function serpentDefeated(){
   serpent.state='dying'; serpent.sink=0;
   const scales=3+Math.floor(W.level/4); W.inv.schub+=scales;
   const gold=900+W.level*50; W.gold+=gold; W.totalEarned+=gold;
-  W.serpentsSlain++; W.serpentGoneUntilDay=W.day+3;
+  W.serpentsSlain++; W.serpentGoneUntilDay=W.day+3; gainFame(25,'Zeeslang verslagen');
   toast(`🏆 ZEESLANG VERSLAGEN! +${scales}× 🐲 schubben en +${gold} 🪙!`,'gold');
   gainXP(200); confettiBurst(serpent.x,serpent.z);
   beep(523,.12); setTimeout(()=>beep(659,.12),140); setTimeout(()=>beep(880,.2),300);
@@ -1649,7 +1653,7 @@ function nearbyGhost(){ return (ghost.state==='sailing' && ghost.fade>0.5 &&
   dist2(ghost.x,ghost.z,shipState.x,shipState.z)<45*45) ? ghost : null; }
 function lootGhost(){
   const g=250+W.level*40+Math.floor(Math.random()*200);
-  W.gold+=g; W.totalEarned+=g; W.ghostsLooted++;
+  W.gold+=g; W.totalEarned+=g; W.ghostsLooted++; gainFame(5,'spookschip');
   if(Math.random()<0.3){
     W.buffs.spookvloek=50;
     toast(`👻 Spookgoud: +${g} 🪙 … maar een VLOEK grijpt je schip! (traag tot hij wegebt)`,'bad');
@@ -1764,7 +1768,7 @@ function crabDefeated(){
   crab.state='dying'; crab.sink=0;
   const claws=2+Math.floor(W.level/5); W.inv.schaar+=claws;
   const gold=1200+W.level*60; W.gold+=gold; W.totalEarned+=gold;
-  W.crabsSlain++; W.crabNextDay=W.day+3+Math.floor(Math.random()*2);
+  W.crabsSlain++; W.crabNextDay=W.day+3+Math.floor(Math.random()*2); gainFame(25,'haven gered');
   toast(`🏆 REUZENKRAB VERSLAGEN! ${crab.harbor?crab.harbor.name+' is gered ':''}+${claws}× 🦀 scharen en +${gold} 🪙!`,'gold');
   gainXP(250); confettiBurst(crab.x,crab.z);
   beep(523,.12); setTimeout(()=>beep(659,.12),140); setTimeout(()=>beep(880,.2),300);
@@ -2101,7 +2105,7 @@ function visitIsland(isl){
   if(isl.treasure && !isl.visited){
     isl.visited=true;
     const loot = 200 + Math.floor(Math.random()*400) + W.level*30;
-    W.gold += loot; W.treasures++;
+    W.gold += loot; W.treasures++; gainFame(6,'schat');
     if(isl.group.userData.gold) isl.group.userData.gold.visible=false;
     if(isl.group.userData.chest) isl.group.userData.chest.material.color.set(0x5a3a1a);
     toast(`🏴‍☠️ Schatkist op ${isl.name}! +${loot} 🪙`,'gold');
@@ -2129,7 +2133,7 @@ function openBottle(b){
 }
 function rescueSailor(s){
   poiGroup.remove(s.group); sailors.splice(sailors.indexOf(s),1);
-  W.rescued++;
+  W.rescued++; gainFame(8,'zeeman gered');
   const reward=150+Math.floor(Math.random()*200)+W.level*15;
   W.gold+=reward;
   toast(`⛑️ Zeeman gered! Dankbaar geeft hij je +${reward} 🪙`,'good');
@@ -2161,12 +2165,14 @@ function sendSeagull(){
 // ============================================================================
 //  8. ECONOMY: prices, selling, cooking
 // ============================================================================
-function musselPrice(harbor){
+function musselPrice(harbor, raw=false){
   let base=14*harbor.demand;
   base *= (1 + (W.skills.handel-1)*0.08);
   if(W.buffs.prijs) base*=1.3;
+  if(!raw) base*=marketMult(harbor,'mossel');
   return Math.round(base);
 }
+function goldPrice(harbor){ return Math.round(musselPrice(harbor,true)*8*marketMult(harbor,'goudmossel')); }
 const RECIPES=[
   {name:'Mosselen Friet',       icon:'🍟', need:6,  base:120,  skill:1},
   {name:'Mosselsoep',           icon:'🥣', need:8,  base:180,  skill:1},
@@ -2183,11 +2189,12 @@ const RECIPES=[
   {name:'Zwarte-inktrisotto',   icon:'🍚', need:6,  base:600,  skill:4, inktvisNeed:4},
   {name:'Keizers Banket',       icon:'👑', need:34, base:1600, skill:7, goldNeed:3, exootNeed:2},
 ];
-function dishPrice(r,harbor,qual=1){
+function dishPrice(r,harbor,qual=1,raw=false){
   let p=r.base*harbor.demand*(1+(W.skills.handel-1)*0.1);
   if(W.buffs.prijs) p*=1.3;
   const q=Math.max(0, Math.min(1, +qual || 0));
   p *= 0.7 + 0.5*q;                      // 0.7× botched timing → 1.2× perfect
+  if(!raw) p*=marketMult(harbor,'gerecht');
   return Math.round(p);
 }
 function peekDishQual(name){
@@ -2253,7 +2260,7 @@ function checkQuests(){
     if(!W.questsDone.has(q.id) && q.check()){
       W.questsDone.add(q.id); W.gold+=q.reward;
       toast(`✅ Logboek voltooid: "${q.t}" +${q.reward} 🪙`,'gold');
-      gainXP(40);
+      gainXP(40); gainFame(Math.max(3,Math.round(q.reward/40)),'logboek');
     }
   }
   renderQuests(); updateHUD();
@@ -2262,9 +2269,117 @@ function renderQuests(){
   const el=document.getElementById('questList');
   const open=QUESTS.filter(q=>!W.questsDone.has(q.id)).slice(0,4);
   const done=QUESTS.filter(q=>W.questsDone.has(q.id)).length;
-  el.innerHTML = open.map(q=>`<div class="q"><b>○</b> ${q.t} <span style="color:var(--gold)">+${q.reward}</span></div>`).join('')
+  const cs=(W.contracts||[]).map(c=>`<div class="q"><b>📜</b> ${contractLabel(c)} naar ${c.harbor} <span style="color:var(--gold)">dag ${c.deadline}</span></div>`).join('');
+  el.innerHTML = cs + open.map(q=>`<div class="q"><b>○</b> ${q.t} <span style="color:var(--gold)">+${q.reward}</span></div>`).join('')
     + (open.length===0?'<div class="q done">Alle missies voltooid! 🏆</div>':'')
     + `<div class="q" style="color:var(--accent)">Voortgang: ${done}/${QUESTS.length}</div>`;
+}
+
+// ---- Roem: titels die je verdient met contracten, missies en monsters ----
+const FAME_TITLES=[[0,'Dekknecht'],[30,'Schipper'],[100,'Kapitein'],[250,'Vlootvoogd'],[500,'Zeeheld'],[900,'Legendarische Mosselkapitein']];
+function fameTitle(f=W.fame){ let t=FAME_TITLES[0][1]; for(const [n,name] of FAME_TITLES) if(f>=n) t=name; return t; }
+function fameNext(f=W.fame){ for(const [n] of FAME_TITLES) if(f<n) return n; return null; }
+function gainFame(n,why){
+  const before=fameTitle(); W.fame+=n;
+  toast(`🏅 +${n} roem${why?' ('+why+')':''}`,'gold');
+  const after=fameTitle();
+  if(after!==before){ toast(`👑 Nieuwe titel: ${after}!`,'gold'); beep(659,.12); setTimeout(()=>beep(880,.18),140); }
+  if(!W.legendShown && fameNext()===null){ W.legendShown=true; setTimeout(showLegendScene, 900); }
+}
+function showLegendScene(){
+  openModal(`<h2>👑 De beroemdste mosselkapitein ter wereld</h2>
+    <div class="sub">Van ${HARBORS[0].name} tot ${HARBORS[HARBORS.length-1].name} zingen ze over je. Je hebt het gehaald, Kapitein!</div>
+    <div class="grid">
+      <div class="card2"><h3>Reis</h3><p>Dag ${W.day} · Niveau ${W.level}</p></div>
+      <div class="card2"><h3>Verdiend</h3><p>${Math.floor(W.totalEarned)} 🪙</p></div>
+      <div class="card2"><h3>Contracten</h3><p>${W.contractsDelivered||0} geleverd</p></div>
+      <div class="card2"><h3>Monsters</h3><p>${W.krakensSlain+W.serpentsSlain+W.crabsSlain} verslagen</p></div>
+    </div>
+    <div class="sub" style="margin-top:12px">De zee blijft open: nieuwe contracten, vraagpieken en monsters wachten op je.</div>
+    <div style="text-align:center;margin-top:14px"><button class="btn" onclick="window.__close()">⚓ Verder varen</button></div>`);
+  for(let k=0;k<6;k++) setTimeout(()=>confettiBurst(shipState.x,shipState.z),k*250);
+}
+
+// ---- Contracten: elke haven biedt per dag één levering aan, premie plus roem ----
+// Het aanbod volgt uit haven, dag en reis-seed, dus het is na herladen hetzelfde.
+function seeded(str){
+  let h=1779033703^str.length;
+  for(let i=0;i<str.length;i++){ h=Math.imul(h^str.charCodeAt(i),3432918353); h=h<<13|h>>>19; }
+  return ()=>{ h=Math.imul(h^(h>>>16),2246822507); h=Math.imul(h^(h>>>13),3266489909); return ((h^=h>>>16)>>>0)/4294967296; };
+}
+const CONTRACT_ITEMS={ mossel:{label:'mosselen',icon:'🦪'}, goudmossel:{label:'gouden mosselen',icon:'🌟'}, zalm:{label:'zalm',icon:'🐟'}, parel:{label:'parels',icon:'✨'}, inktvis:{label:'inktvis',icon:'🦑'} };
+function contractId(h){ return h.name+'#'+W.day; }
+function contractOffer(h){
+  const id=contractId(h);
+  if(W.contractsDone.includes(id) || W.contracts.some(c=>c.id===id)) return null;
+  const rnd=seeded(id+'|'+W.contractSeed);
+  const b=harborBiome(h);
+  // vraag naar wat hier niet vandaan komt weegt zwaarder: zo ontstaan handelsroutes
+  const pool=[['mossel',b==='kust'?1:3],['zalm',b==='storm'?1:3],['parel',b==='tropisch'?1:2],['inktvis',b==='mist'?1:3],['goudmossel',1],['gerecht',3]];
+  let r=rnd()*pool.reduce((t,p)=>t+p[1],0), kind='mossel';
+  for(const [k,w] of pool){ r-=w; if(r<=0){ kind=k; break; } }
+  const c={ id, harbor:h.name, kind, deadline:W.day+2+Math.floor(rnd()*3) };
+  if(kind==='gerecht'){
+    const rs=RECIPES.filter(x=>x.skill<=Math.max(1,W.skills.koken)); const rc=rs[Math.floor(rnd()*rs.length)];
+    c.dish=rc.name; c.need=2+Math.floor(rnd()*4); c.unit=Math.round(rc.base*h.demand*1.35);
+  } else {
+    const scale=Math.min(6, Math.max(1, W.holdMax/40));
+    const base={mossel:[12,30],zalm:[6,16],inktvis:[6,16],parel:[2,5],goudmossel:[1,3]}[kind];
+    c.need=Math.round((base[0]+rnd()*(base[1]-base[0]))*scale);
+    c.unit=Math.round(unitPriceRaw(kind,h)*1.6);
+  }
+  c.reward=c.need*c.unit; c.fame=Math.max(4, Math.min(40, Math.round(c.reward/55)));
+  return c;
+}
+function contractLabel(c){ return c.dish ? `${(RECIPES.find(r=>r.name===c.dish)||{icon:'🍽️'}).icon} ${c.need}× ${c.dish}` : `${CONTRACT_ITEMS[c.kind].icon} ${c.need}× ${CONTRACT_ITEMS[c.kind].label}`; }
+function contractHave(c){ return c.dish ? (W.dishes[c.dish]||0) : (W.inv[c.kind]||0); }
+function contractCards(h){
+  let html='';
+  for(const c of W.contracts){
+    const have=contractHave(c), here=h && c.harbor===h.name, ok=have>=c.need;
+    html+=`<div class="card2"><h3>${here?'📍':'⚓'} ${c.harbor}</h3>
+      <p>${contractLabel(c)} · aan boord: <b style="color:${ok?'var(--good)':'var(--accent)'}">${have}</b><br>Vóór dag ${c.deadline} (nog ${Math.max(0,c.deadline-W.day)} dagen)<br><span class="price">${c.reward} 🪙</span> + 🏅 ${c.fame} roem</p>
+      ${here?`<button class="btn sell" ${ok?'':'disabled'} onclick="window.__deliverContract('${c.id}')">${ok?'Leveren':'Nog niet genoeg aan boord'}</button> `:''}
+      <button class="btn alt" onclick="window.__dropContract('${c.id}')">Opzeggen</button></div>`;
+  }
+  return html;
+}
+function tabContracten(h){
+  const offer=contractOffer(h);
+  const active=W.contracts.find(c=>c.harbor===h.name);
+  let html=`<div class="sub">Havens vragen leveringen tegen een premie plus roem. Jouw titel: <b style="color:var(--gold)">${fameTitle()}</b> (${W.fame} roem${fameNext()!==null?`, volgende titel bij ${fameNext()}`:''}).</div><div class="grid">`;
+  if(offer && !active){
+    html+=`<div class="card2" style="grid-column:1/-1;border-color:var(--gold)"><h3>📜 Aanbod van vandaag</h3>
+      <p>Lever <b>${contractLabel(offer)}</b> hier vóór dag ${offer.deadline}.<br>Beloning <span class="price">${offer.reward} 🪙</span> + 🏅 ${offer.fame} roem</p>
+      <button class="btn" ${W.contracts.length>=3?'disabled':''} onclick="window.__takeContract()">${W.contracts.length>=3?'Maximaal 3 contracten tegelijk':'Contract aannemen'}</button></div>`;
+  } else if(!active) html+=`<div class="card2" style="grid-column:1/-1"><h3>📜 Aanbod</h3><p>Vandaag geen nieuw contract in deze haven. Morgen hangt er weer een nieuw aanbod.</p></div>`;
+  html+=contractCards(h);
+  if(!W.contracts.length) html+=`<div class="card2"><h3>Lopende contracten</h3><p>Geen. Je kunt er maximaal drie tegelijk aannemen, ook in verschillende havens.</p></div>`;
+  return html+'</div>';
+}
+window.__takeContract=()=>{
+  const c=contractOffer(curHarbor); if(!c||W.contracts.length>=3) return;
+  W.contracts.push(c); toast(`📜 Contract aangenomen: ${contractLabel(c)} naar ${c.harbor}`,'good'); beep(600,.06);
+  renderHarbor(); renderQuests();
+};
+window.__dropContract=id=>{
+  const i=W.contracts.findIndex(c=>c.id===id); if(i<0) return;
+  W.contractsDone.push(id); W.contracts.splice(i,1); toast('📜 Contract opgezegd.');
+  if(curHarbor && $('overlay').style.display==='flex') renderHarbor(); renderQuests();
+};
+window.__deliverContract=id=>{
+  const c=W.contracts.find(x=>x.id===id); if(!c||!curHarbor||c.harbor!==curHarbor.name||contractHave(c)<c.need) return;
+  if(c.dish){ W.dishes[c.dish]-=c.need; for(let i=0;i<c.need;i++) takeDishQual(c.dish); } else W.inv[c.kind]-=c.need;
+  W.gold+=c.reward; W.totalEarned+=c.reward; W.totalSold+=c.reward; W.contractsDelivered=(W.contractsDelivered||0)+1;
+  W.contractsDone.push(id); W.contracts.splice(W.contracts.indexOf(c),1);
+  toast(`✅ Contract geleverd: +${c.reward} 🪙`,'gold'); beep(784,.08); setTimeout(()=>beep(988,.12),110);
+  gainSkill('handel',6); gainXP(60); gainFame(c.fame,'contract');
+  renderHarbor(); renderQuests(); updateHUD(); checkQuests();
+};
+function contractsNewDay(){
+  for(const c of [...W.contracts]) if(W.day>c.deadline){ W.contracts.splice(W.contracts.indexOf(c),1); toast(`⌛ Contract verlopen: ${contractLabel(c)} voor ${c.harbor}`); }
+  W.contractsDone=W.contractsDone.filter(id=>+id.split('#')[1]>=W.day-1);
+  renderQuests();
 }
 
 // ============================================================================
@@ -2325,9 +2440,10 @@ function openHarbor(h, tab='verkoop'){
 }
 function renderHarbor(){
   const h=curHarbor; if(!h) return;
-  const tabs=[['verkoop','💰 Verkoop'],['markt','🛒 Markt'],['kombuis','👨‍🍳 Kombuis'],['upgrades','🔧 Werf'],['schepen','🚢 Schepen'],['kapitein','🧑‍✈️ Kapitein']];
+  const tabs=[['verkoop','💰 Verkoop'],['contracten','📜 Contracten'],['markt','🛒 Markt'],['kombuis','👨‍🍳 Kombuis'],['upgrades','🔧 Werf'],['schepen','🚢 Schepen'],['kapitein','🧑‍✈️ Kapitein']];
   let body='';
   if(curTab==='verkoop') body=tabVerkoop(h);
+  else if(curTab==='contracten') body=tabContracten(h);
   else if(curTab==='markt') body=tabMarkt(h);
   else if(curTab==='kombuis') body=tabKombuis(h);
   else if(curTab==='upgrades') body=tabUpgrades(h);
@@ -2336,7 +2452,8 @@ function renderHarbor(){
   openModal(`
     <button class="closeX" onclick="window.__close()">✕</button>
     <h2>${h.icon} ${h.name}</h2>
-    <div class="sub">Biome: ${biomeLabel(harborBiome(h))} · Vraag ×${h.demand.toFixed(1)} · Jouw 🪙 ${Math.floor(W.gold)}</div>
+    <div class="sub">Biome: ${biomeLabel(harborBiome(h))} · Vraag ×${h.demand.toFixed(1)} · Jouw 🪙 ${Math.floor(W.gold)} · 🏅 ${fameTitle()}</div>
+    ${boomLine()?`<div class="sub" style="color:var(--gold)">${boomLine()}</div>`:''}
     <div class="tabs">${tabs.map(t=>`<div class="tab ${curTab===t[0]?'active':''}" onclick="window.__tab('${t[0]}')">${t[1]}</div>`).join('')}</div>
     <div id="modalBody">${body}</div>
   `);
@@ -2348,20 +2465,68 @@ const PRODUCT_PRICES={
   parel:   { base:120, storm:1.8, kust:1.4, tropisch:0.7, mist:1.1, tip:'verkoopt het best in de IJszee' },
   inktvis: { base:35,  storm:1.1, kust:1.5, tropisch:1.2, mist:0.7, tip:'verkoopt het best aan de kust' },
 };
-function productPrice(kind,harbor){
+function productPrice(kind,harbor, raw=false){
   const p=PRODUCT_PRICES[kind]; if(!p) return 0;
   let v=p.base*(p[harborBiome(harbor)]||1)*harbor.demand*(1+(W.skills.handel-1)*0.08);
   if(W.buffs.prijs) v*=1.3;
+  if(!raw) v*=marketMult(harbor,kind);
   return Math.round(v);
+}
+// ---- Levende markt ----
+// Elke verkochte eenheid drukt de prijs in die haven een beetje, 's nachts herstelt de
+// vraag grotendeels. Een vraagpiek (marktbericht) betaalt twee dagen bijna dubbel.
+// Zo loont het om vangst te spreiden over havens en zeeën.
+const MARKET_CAP={ mossel:140, goudmossel:12, zalm:70, inktvis:70, parel:14, gerecht:14 };
+const MARKET_KINDS=['mossel','goudmossel','zalm','parel','inktvis'];   // buit en exoten houden een vaste prijs
+function marketKey(kind){ return MARKET_CAP[kind]!==undefined ? kind : 'gerecht'; }
+function marketSoldCount(h,kind){ const m=W.market[h.name]; return m ? (m[marketKey(kind)]||0) : 0; }
+function marketSold(h,kind,n){ const k=marketKey(kind); (W.market[h.name]=W.market[h.name]||{})[k]=marketSoldCount(h,kind)+n; }
+function boomActive(h,kind){ const b=W.boom; return !!(b && b.harbor===h.name && b.kind===marketKey(kind) && b.until>=W.day); }
+function marketMult(h,kind,extra=0){
+  const cap=MARKET_CAP[marketKey(kind)];
+  let m=Math.max(0.45, 1/(1+(marketSoldCount(h,kind)+extra)/cap));
+  if(boomActive(h,kind)) m*=1.8;
+  return m;
+}
+function marketTag(h,kind){
+  if(boomActive(h,kind)) return '<b style="color:var(--gold)">📈 vraagpiek</b>';
+  const m=marketMult(h,kind); if(m<0.93) return `<b style="color:#ff9d4d">📉 ${Math.round((1-m)*100)}% gedrukt</b>`;
+  return '';
+}
+function boomLabel(k){ return {mossel:'mosselen',goudmossel:'gouden mosselen',zalm:'zalm',parel:'parels',inktvis:'inktvis',gerecht:'gerechten'}[k]||k; }
+function boomLine(){ const b=W.boom; return (b && b.until>=W.day) ? `📣 Marktbericht: ${b.harbor} betaalt tot en met dag ${b.until} bijna dubbel voor ${boomLabel(b.kind)}.` : ''; }
+// Opbrengst van n stuks als elke verkoop de prijs weer een beetje verder drukt.
+function sellTotal(h,kind,n,unit){ let t=0; for(let i=0;i<n;i++) t+=unit*marketMult(h,kind,i); return Math.round(t); }
+function unitPriceRaw(kind,h){
+  return kind==='goudmossel'? musselPrice(h,true)*8 : kind==='exoot'? 60 : kind==='krakeninkt'? 220 : kind==='schub'? 150 : kind==='schaar'? 180
+    : PRODUCT_PRICES[kind]? productPrice(kind,h,true) : musselPrice(h,true);
+}
+function sellKind(kind,n){
+  const h=curHarbor; const raw=unitPriceRaw(kind,h); const mk=MARKET_KINDS.includes(kind);
+  const tot = mk ? sellTotal(h,kind,n,raw) : Math.round(raw*n);
+  if(mk) marketSold(h,kind,n);
+  if(kind==='parel' && harborBiome(h)==='storm') W.parelInIJszee=true;
+  W.inv[kind]-=n; W.gold+=tot; W.totalEarned+=tot; W.totalSold+=tot;
+  return tot;
+}
+function marketNewDay(){
+  for(const hn of Object.keys(W.market)){ const m=W.market[hn]; for(const k of Object.keys(m)){ m[k]*=0.45; if(m[k]<0.5) delete m[k]; } if(!Object.keys(m).length) delete W.market[hn]; }
+  if(!W.boom || W.boom.until<W.day){
+    if(Math.random()<0.65){
+      const h=pick(HARBORS); const kind=pick(['mossel','zalm','parel','inktvis','gerecht','gerecht']);
+      W.boom={harbor:h.name, kind, until:W.day+1};
+      toast(boomLine(),'gold');
+    } else W.boom=null;
+  }
 }
 function tabVerkoop(h){
   const mp=musselPrice(h);
   let rows='';
-  rows+=invRow('🦪 Mosselen', W.inv.mossel, mp, ()=>`window.__sell('mossel')`);
-  rows+=invRow('🌟 Gouden mosselen', W.inv.goudmossel, mp*8, ()=>`window.__sell('goudmossel')`);
-  rows+=invRow('🐟 Zalm', W.inv.zalm, productPrice('zalm',h), ()=>`window.__sell('zalm')`,'('+PRODUCT_PRICES.zalm.tip+')');
-  rows+=invRow('✨ Parels', W.inv.parel, productPrice('parel',h), ()=>`window.__sell('parel')`,'('+PRODUCT_PRICES.parel.tip+')');
-  rows+=invRow('🦑 Inktvis', W.inv.inktvis, productPrice('inktvis',h), ()=>`window.__sell('inktvis')`,'('+PRODUCT_PRICES.inktvis.tip+')');
+  rows+=invRow('🦪 Mosselen', W.inv.mossel, mp, ()=>`window.__sell('mossel')`, marketTag(h,'mossel'));
+  rows+=invRow('🌟 Gouden mosselen', W.inv.goudmossel, goldPrice(h), ()=>`window.__sell('goudmossel')`, marketTag(h,'goudmossel'));
+  rows+=invRow('🐟 Zalm', W.inv.zalm, productPrice('zalm',h), ()=>`window.__sell('zalm')`,'('+PRODUCT_PRICES.zalm.tip+') '+marketTag(h,'zalm'));
+  rows+=invRow('✨ Parels', W.inv.parel, productPrice('parel',h), ()=>`window.__sell('parel')`,'('+PRODUCT_PRICES.parel.tip+') '+marketTag(h,'parel'));
+  rows+=invRow('🦑 Inktvis', W.inv.inktvis, productPrice('inktvis',h), ()=>`window.__sell('inktvis')`,'('+PRODUCT_PRICES.inktvis.tip+') '+marketTag(h,'inktvis'));
   rows+=invRow('🐠 Exotische dieren', W.inv.exoot, 60, ()=>`window.__sell('exoot')`,'(of doneer aan aquarium)');
   rows+=invRow('🖋️ Krakeninkt', W.inv.krakeninkt, 220, ()=>`window.__sell('krakeninkt')`,'(zeldzame buit van de Kraken)');
   rows+=invRow('🐲 Zeeslangschubben', W.inv.schub, 150, ()=>`window.__sell('schub')`,'(glinsterende buit van de zeeslang)');
@@ -2370,7 +2535,7 @@ function tabVerkoop(h){
   let dishRows='';
   for(const r of RECIPES){
     const c=W.dishes[r.name]||0; if(c<=0) continue;
-    dishRows+=invRow(`${r.icon} ${r.name}`, c, dishPrice(r,h,peekDishQual(r.name)), ()=>`window.__sellDish('${r.name}')`);
+    dishRows+=invRow(`${r.icon} ${r.name}`, c, dishPrice(r,h,peekDishQual(r.name)), ()=>`window.__sellDish('${r.name}')`, marketTag(h,'gerecht'));
   }
   return `
     <div class="grid"><div class="card2" style="grid-column:1/-1">
@@ -2380,7 +2545,8 @@ function tabVerkoop(h){
     ${dishRows?`<div class="card2" style="grid-column:1/-1"><h3>Gerechten 🍽️</h3>${dishRows}
       <button class="btn sell" style="margin-top:10px;width:100%" onclick="window.__sellDishesAll()">Verkoop alle gerechten</button></div>`:''}
     </div>
-    ${W.buffs.prijs?'<div class="sub" style="color:var(--gold)">🌟 Prijsbonus actief!</div>':''}`;
+    ${W.buffs.prijs?'<div class="sub" style="color:var(--gold)">🌟 Prijsbonus actief!</div>':''}
+    <div class="sub">Veel van hetzelfde verkopen drukt hier de prijs, morgen is de vraag grotendeels hersteld. Spreid je vangst over havens.</div>`;
 }
 function invRow(label,count,price,fn,extra=''){
   return `<div class="invrow">
@@ -2459,7 +2625,7 @@ function tabKapitein(h){
   const aqua = W.aquarium.length? W.aquarium.map(n=>`🐠 ${n}`).join(' · ') : 'Nog leeg vang exotische zeedieren!';
   return `<div class="grid">
     <div class="card2"><h3>🧑‍✈️ Kapitein Niveau ${W.level}</h3>
-      <p>XP ${Math.floor(W.xp)}/${W.xpNext}<br>
+      <p>XP ${Math.floor(W.xp)}/${W.xpNext}<br>🏅 ${fameTitle()} · ${W.fame} roem${fameNext()!==null?` (volgende titel bij ${fameNext()})`:''}<br>
       🧭 Navigatie ${sk.navigatie} · 👨‍🍳 Koken ${sk.koken}<br>🤝 Handel ${sk.handel} · 🎣 Visserij ${sk.visserij}</p></div>
     <div class="card2"><h3>🏆 Statistieken</h3><p>
       Schatten: ${W.treasures} · Geredde zeelieden: ${W.rescued}<br>
@@ -2478,32 +2644,23 @@ window.__close=closeModal;
 window.__tab=t=>{ curTab=t; renderHarbor(); };
 window.__sell=kind=>{
   if(W.inv[kind]<=0) return;
-  let price = kind==='goudmossel'? musselPrice(curHarbor)*8 : kind==='exoot'? 60 : kind==='krakeninkt'? 220 : kind==='schub'? 150 : kind==='schaar'? 180
-    : PRODUCT_PRICES[kind]? productPrice(kind,curHarbor) : musselPrice(curHarbor);
-  if(kind==='parel' && harborBiome(curHarbor)==='storm') W.parelInIJszee=true;
-  W.inv[kind]--; W.gold+=price; W.totalEarned+=price; W.totalSold+=price; gainSkill('handel',1.2);
+  sellKind(kind,1); gainSkill('handel',1.2);
   beep(720,.05); renderHarbor(); updateHUD(); checkQuests();
 };
 window.__sellAll=()=>{
-  const mp=musselPrice(curHarbor);
-  let tot = W.inv.mossel*mp + W.inv.goudmossel*mp*8 + W.inv.exoot*60
-    + W.inv.zalm*productPrice('zalm',curHarbor) + W.inv.parel*productPrice('parel',curHarbor)
-    + W.inv.inktvis*productPrice('inktvis',curHarbor)
-    + W.inv.krakeninkt*220 + W.inv.schub*150 + W.inv.schaar*180;
+  let tot=0, items=0;
+  for(const k of ['mossel','goudmossel','exoot','zalm','parel','inktvis','krakeninkt','schub','schaar']){
+    const n=W.inv[k]||0; if(n>0){ items+=n; tot+=sellKind(k,n); }
+  }
   if(tot<=0) return;
-  if(W.inv.parel>0 && harborBiome(curHarbor)==='storm') W.parelInIJszee=true;
-  const items=W.inv.mossel+W.inv.goudmossel+W.inv.exoot+W.inv.zalm+W.inv.parel+W.inv.inktvis
-    +W.inv.krakeninkt+W.inv.schub+W.inv.schaar;
-  W.totalEarned+=tot; W.totalSold+=tot; W.gold+=tot;
   gainSkill('handel', items*0.5);
-  W.inv.mossel=0; W.inv.goudmossel=0; W.inv.exoot=0; W.inv.zalm=0; W.inv.parel=0; W.inv.inktvis=0;
-  W.inv.krakeninkt=0; W.inv.schub=0; W.inv.schaar=0;
   toast(`💰 Alles verkocht voor ${Math.floor(tot)} 🪙`,'good'); beep(720,.08);
   renderHarbor(); updateHUD(); checkQuests();
 };
 window.__sellDish=name=>{
   if((W.dishes[name]||0)<=0) return;
   const r=RECIPES.find(x=>x.name===name); const p=dishPrice(r,curHarbor,takeDishQual(name));
+  marketSold(curHarbor,'gerecht',1);
   W.dishes[name]--; W.gold+=p; W.totalEarned+=p; W.totalSold+=p; gainSkill('handel',2);
   beep(784,.06); renderHarbor(); updateHUD(); checkQuests();
 };
@@ -2511,7 +2668,7 @@ window.__sellDishesAll=()=>{
   let tot=0;
   for(const r of RECIPES){
     const c=W.dishes[r.name]||0; if(c<=0) continue;
-    for(let i=0;i<c;i++) tot+=dishPrice(r,curHarbor,takeDishQual(r.name));
+    for(let i=0;i<c;i++){ tot+=dishPrice(r,curHarbor,takeDishQual(r.name)); marketSold(curHarbor,'gerecht',1); }
     W.dishes[r.name]=0;
   }
   if(tot<=0) return; W.gold+=tot; W.totalEarned+=tot; W.totalSold+=tot; gainSkill('handel',4);
@@ -3017,6 +3174,7 @@ function stepSim(dt){
   if(W.time>=24){ W.time-=24; W.day++;
     if(W.hasRestaurant){ const inc=80+W.level*20; W.gold+=inc; toast(`🍽️ Drijvend restaurant verdiende vannacht +${inc} 🪙`,'good'); }
     toast(`🌅 Dag ${W.day} breekt aan!`); updateHUD();
+    marketNewDay(); contractsNewDay();
   }
   updateClock();
 
@@ -3581,13 +3739,16 @@ function togglePause(){
   if(W.paused){ openModal(`<h2>⏸️ Pauze</h2><div class="sub">Dag ${W.day} · ${$('clock').textContent} · ${WEATHERS[W.weather].name}</div>
     <div class="grid">
       <div class="card2"><h3>🪙 Munten</h3><p>${Math.floor(W.gold)}</p></div>
-      <div class="card2"><h3>⭐ Kapitein</h3><p>Niveau ${W.level} · ${Math.floor(W.xp)}/${W.xpNext} XP</p></div>
+      <div class="card2"><h3>⭐ Kapitein</h3><p>Niveau ${W.level} · ${Math.floor(W.xp)}/${W.xpNext} XP<br>🏅 ${fameTitle()} · ${W.fame} roem</p></div>
       <div class="card2"><h3>🦪 Ruim</h3><p>${holdCount()}/${W.holdMax}</p></div>
       <div class="card2"><h3>🚢 Schip</h3><p>${SHIPS[W.ship].name}</p></div>
+      ${W.contracts.length?`<div class="card2" style="grid-column:1/-1"><h3>📜 Contracten</h3><p>${W.contracts.map(c=>`${contractLabel(c)} naar <b>${c.harbor}</b> vóór dag ${c.deadline} (aan boord ${contractHave(c)})`).join('<br>')}</p></div>`:''}
+      ${boomLine()?`<div class="card2" style="grid-column:1/-1"><h3>📣 Markt</h3><p>${boomLine()}</p></div>`:''}
     </div>
     <div style="text-align:center;margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button class="btn" onclick="window.__resume()">▶️ Verder spelen</button>
       <button class="btn alt" onclick="window.__manual()">📖 Handleiding</button>
+      <button class="btn alt" onclick="window.__saveCode()">💾 Reis-code</button>
       ${postFX.available?`<button class="btn alt" onclick="window.__toggleFX()">✨ Gloed: ${postFX.enabled?'aan':'uit'}</button>`:''}
     </div>`);
   } else closeModal();
@@ -3609,6 +3770,8 @@ function openManual(){
       <div class="card2"><h3>🦪 Vangen & koken</h3><p>Ping met de <b>${IS_TOUCH?'📡 Sonar':'F'}</b> om mosselbanken te vinden. Een echo blijft maar korte tijd op je scherm staan, dus ping regelmatig opnieuw. Vaar erheen, houd <b>${IS_TOUCH?'🦪 Vang':'Spatie'}</b> vast tot je ruim vol is. Meer aan in een haven, open de <b>Kombuis</b> en kook met perfecte timing: hoe beter je timing, hoe waardevoller het gerecht.</p></div>
       <div class="card2"><h3>🛡️ Romp & overleven</h3><p>Je <b>romp</b> staat in de balk bovenin. Monsters slaan er stukken uit; buiten gevechten herstelt hij langzaam vanzelf. Koop <b>Onderhoud</b> op de werf om hem in één keer volledig te repareren. Loopt je romp leeg, dan <b>zink je en ben je je voortgang kwijt</b>. Vlucht dus op tijd!</p></div>
       <div class="card2"><h3>🧭 De Vier Zeeën</h3><p>Elke hoek van de oceaan heeft eigen vangst: <b>❄️ IJszee</b> (noord) met zwemmende <b>zalmscholen</b>, <b>🏝️ Parelzee</b> (oost) met kostbare <b>pareloesters</b> die vaak vlak bij de <b>koraalriffen</b> liggen (pas op: koraal schuurt je vaart eruit, vaar er omheen), <b>🌫️ Schemerzee</b> (west) met <b>inktvis die alleen bij nacht</b> opduikt, en de vertrouwde mosselbanken aan de kust. Vang het ver weg en verkoop het aan de andere kant van de kaart voor de beste prijs!</p></div>
+      <div class="card2"><h3>📜 Contracten en roem</h3><p>Elke haven hangt per dag één <b>contract</b> uit: lever een vangst of gerecht vóór een deadline voor een premie plus <b>roem</b>. Roem krijg je ook voor missies en monsters en bepaalt je titel, van Dekknecht tot <b>Legendarische Mosselkapitein</b>. Maximaal drie contracten tegelijk.</p></div>
+      <div class="card2"><h3>📣 Levende markt</h3><p>Veel van hetzelfde verkopen in één haven drukt daar de prijs; de volgende ochtend is de vraag grotendeels hersteld. Let op het <b>marktbericht</b>: een haven betaalt dan twee dagen bijna dubbel voor één soort. Spreid je vangst over havens en zeeën.</p></div>
       <div class="card2"><h3>🌊 De open zee</h3><p>Ontdek verborgen eilanden met schatten 🏴‍☠️, red gestrande zeelieden ⛑️, vang exotische dieren voor je aquarium 🐠, vind gouden mosselen 🌟 en flessenpost met missies 📜. Let op het weer en de dag-/nachtcyclus.</p></div>
       <div class="card2" style="grid-column:1/-1"><h3>🐙 Zeemonsters: waar en wanneer</h3>
         <p>Koop eerst het <b>🔱 Harpoenkanon</b> op de werf (1500). Grotere schepen hebben meer vuurkracht en een sterkere romp.</p>
@@ -3649,6 +3812,8 @@ function serializeSave(){
     totalCaught:W.totalCaught, totalCooked:W.totalCooked, totalEarned:W.totalEarned, totalSold:W.totalSold, totalGold:W.totalGold,
     totalZalm:W.totalZalm, totalParel:W.totalParel, totalInktvis:W.totalInktvis, parelInIJszee:W.parelInIJszee,
     dirt:W.dirt,
+    fame:W.fame, legendShown:W.legendShown, contracts:W.contracts, contractsDone:W.contractsDone,
+    contractsDelivered:W.contractsDelivered, contractSeed:W.contractSeed, market:W.market, boom:W.boom,
     islandsVisited: islandMeshes.map(i=>!!i.visited),
     ship_x:shipState.x, ship_z:shipState.z, ship_h:shipState.heading,
   };
@@ -3674,7 +3839,8 @@ function applySave(d){
     'serpentsSlain','serpentGoneUntilDay','ghostsLooted','crabsSlain','crabNextDay',
     'seagullName','aquarium','time','day','rescued','treasures','bottles',
     'totalCaught','totalCooked','totalEarned','totalSold','totalGold',
-    'totalZalm','totalParel','totalInktvis','parelInIJszee','dirt'];
+    'totalZalm','totalParel','totalInktvis','parelInIJszee','dirt',
+    'fame','legendShown','contracts','contractsDone','contractsDelivered','contractSeed','market','boom'];
   for(const k of keys){ if(d[k]!==undefined) W[k]=d[k]; }
   if(W.inv.krakeninkt===undefined) W.inv.krakeninkt=0;
   if(W.inv.schub===undefined) W.inv.schub=0;
@@ -3685,6 +3851,11 @@ function applySave(d){
   if(W.dirt===undefined) W.dirt=0;
   if(!W.dishQual) W.dishQual={};
   if(W.totalSold===undefined) W.totalSold=0;
+  if(typeof W.fame!=='number') W.fame=0;
+  if(!Array.isArray(W.contracts)) W.contracts=[];
+  if(!Array.isArray(W.contractsDone)) W.contractsDone=[];
+  if(!W.market || typeof W.market!=='object') W.market={};
+  if(typeof W.contractSeed!=='number') W.contractSeed=Math.floor(Math.random()*1e9);
   W.hullMax=100+W.ship*25; W.hull=Math.min(W.hull??W.hullMax, W.hullMax);
   if(!W.hull) W.hull=W.hullMax;
   W.questsDone = new Set(d.questsDone||[]);
@@ -3712,6 +3883,41 @@ function newGame(){
   try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
   location.reload();
 }
+
+// ---- Reis-code: voortgang als tekst meenemen naar een andere telefoon of browser ----
+function saveCode(){ return 'MK1.'+btoa(unescape(encodeURIComponent(JSON.stringify(serializeSave())))); }
+function parseSaveCode(s){
+  s=String(s||'').replace(/\s+/g,''); if(!s.startsWith('MK1.')) return null;
+  try{ const d=JSON.parse(decodeURIComponent(escape(atob(s.slice(4))))); return (d && d.v===1) ? d : null; }catch(e){ return null; }
+}
+const TA_STYLE='width:100%;box-sizing:border-box;height:84px;font-size:11px;font-family:monospace;background:rgba(0,0,0,.35);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;resize:none';
+function openSaveCode(){
+  const code=(W.started||loadedFromSave) ? saveCode() : '';
+  openModal(`<h2>💾 Reis-code</h2>
+    <div class="sub">Neem je reis mee naar een andere telefoon of browser: kopieer de code hier, plak hem daar en kies Reis laden. Handig als back-up.</div>
+    ${code?`<textarea id="saveOut" readonly style="${TA_STYLE}">${code}</textarea>
+    <div style="text-align:center;margin:8px 0 14px"><button class="btn" onclick="window.__copySave()">📋 Kopieer code</button></div>`:''}
+    <h3 style="margin:6px 0">Reis laden</h3>
+    <textarea id="saveIn" placeholder="Plak hier een reis-code" style="${TA_STYLE}"></textarea>
+    <div style="text-align:center;margin-top:10px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button class="btn sell" onclick="window.__importSave()">⚓ Reis laden</button>
+      <button class="btn alt" onclick="window.__closeSaveCode()">◀ Terug</button></div>`);
+}
+window.__saveCode=openSaveCode;
+window.__copySave=async()=>{
+  const ta=$('saveOut'); if(!ta) return;
+  try{ await navigator.clipboard.writeText(ta.value); toast('📋 Reis-code gekopieerd.','good'); }
+  catch(e){ ta.focus(); ta.select(); try{ document.execCommand('copy'); toast('📋 Reis-code gekopieerd.','good'); }catch(e2){ toast('Selecteer de code en kopieer hem handmatig.'); } }
+};
+window.__importSave=()=>{
+  const d=parseSaveCode(($('saveIn')||{}).value);
+  if(!d){ toast('❌ Dat is geen geldige reis-code.'); return; }
+  if((W.started||loadedFromSave) && !confirm('Je huidige reis wordt vervangen door deze code. Doorgaan?')) return;
+  W.started=false;                                    // zodat de autosave de nieuwe reis niet overschrijft
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(d)); }catch(e){ toast('❌ Opslaan lukt niet in deze browser.'); return; }
+  location.reload();
+};
+window.__closeSaveCode=()=>{ closeModal(); if(W.started){ W.paused=false; togglePause(); } };
 window.__newGame=()=>{ if(confirm('Nieuw spel starten? Je huidige voortgang gaat verloren.')) newGame(); };
 
 // Autosave: every few seconds while playing, and whenever the app is hidden/closed
@@ -3782,12 +3988,15 @@ if(hasSave()){
 if(loadedFromSave){
   $('playBtn').textContent='⚓ Verder spelen';
 }
-// New-game link under the title (only when a save exists)
-if(loadedFromSave){
+// Links under the title: new game (only when a save exists) and the travel code
+{
   const box=$('titleLinks');
+  const LS='background:none;border:none;color:#cfe0ef;text-decoration:underline;font-size:13px;cursor:pointer;font-family:inherit;text-shadow:0 1px 5px rgba(0,0,0,.9);margin:0 8px';
   if(box){
-    box.innerHTML=`<button id="newGameBtn" style="background:none;border:none;color:#cfe0ef;text-decoration:underline;font-size:13px;cursor:pointer;font-family:inherit;text-shadow:0 1px 5px rgba(0,0,0,.9)">🆕 Nieuw spel beginnen</button>`;
+    box.innerHTML=(loadedFromSave?`<button id="newGameBtn" style="${LS}">🆕 Nieuw spel beginnen</button>`:'')
+      +`<button id="saveCodeBtn" style="${LS}">💾 Reis-code</button>`;
     const nb=$('newGameBtn'); if(nb) nb.addEventListener('click',window.__newGame);
+    const sb=$('saveCodeBtn'); if(sb) sb.addEventListener('click',openSaveCode);
   }
 }
 
