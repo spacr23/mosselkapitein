@@ -384,7 +384,7 @@
       const webgl=window.__errs.some(m=>/webgl/i.test(m));
       if((heal && safe) || webgl){
         window.__showFail(webgl
-          ? 'Je telefoon geeft even geen 3D-beeld (WebGL). Herstart je iPhone en open het spel daarna opnieuw. Dit ligt aan het toestel, niet aan je opgeslagen reis.'
+          ? 'Je telefoon blokkeert 3D-beeld (WebGL). Staat de Vergrendelingsmodus aan? Instellingen, Privacy en beveiliging, Vergrendelingsmodus. Zet hem uit, of sluit deze site ervan uit via het aA-menu in Safari. Je opgeslagen reis blijft bewaard.'
           : 'Het laden lukt niet.');
         return;
       }

@@ -96,7 +96,7 @@ function makeRenderer(){
   let err=null;
   for(const o of tries){ try{ return new THREE.WebGLRenderer(o); }catch(e){ err=e; } }
   mark('webgl mislukt');
-  const msg='Je telefoon geeft even geen 3D-beeld (WebGL). Herstart je iPhone en open het spel daarna opnieuw. Dit ligt aan het toestel, niet aan je opgeslagen reis.';
+  const msg='Je telefoon blokkeert 3D-beeld (WebGL). Staat de Vergrendelingsmodus aan? Instellingen, Privacy en beveiliging, Vergrendelingsmodus. Zet hem uit, of sluit deze site ervan uit via het aA-menu in Safari. Je opgeslagen reis blijft bewaard.';
   try{ if(window.__showFail) window.__showFail(msg, String(err && err.message || err)); }catch(e){}
   throw err || new Error('WebGL niet beschikbaar');
 }
