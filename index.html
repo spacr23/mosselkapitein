@@ -341,40 +341,58 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 }}
 </script>
-<script type="module" src="./game.js"></script>
+<script>
+  // Load diagnostics: game.js reports which phase it reached, and every error
+  // is kept so the watchdog can show *why* loading failed instead of hanging.
+  window.__stage='game.js ophalen'; window.__t0=Date.now(); window.__errs=[];
+  window.__mark=s=>{ window.__stage=s; };
+  const __keep=m=>{ m=String(m||'').slice(0,160); if(m && window.__errs.length<6 && !window.__errs.includes(m)) window.__errs.push(m); };
+  addEventListener('error',e=>__keep(e.message||(e.target&&e.target.src&&('kan niet laden: '+e.target.src.split('/').pop()))),true);
+  addEventListener('unhandledrejection',e=>__keep(e.reason&&(e.reason.message||e.reason)));
+</script>
+<script type="module" src="./game.js" onerror="window.__errs.push('game.js kon niet worden geladen')"></script>
 <script>
   // Register the service worker for offline play + faster loads (long-term testing on a phone).
   if('serviceWorker' in navigator){
     addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
   }
-  // Watchdog: if the game module hasn't come alive within 8s (e.g. a broken
-  // cached game.js), wipe this device's caches and reload once to self-heal.
+  // Watchdog: if the game module hasn't come alive in time, heal in steps:
+  //  1. wipe this device's caches + service worker and reload (broken cache)
+  //  2. reload in safe mode: game.js skips post-processing (bloom) entirely
+  //  3. show what went wrong, with a retry button
   window.__hardReset=async()=>{
     try{
       if(navigator.serviceWorker){ const rs=await navigator.serviceWorker.getRegistrations(); for(const r of rs) await r.unregister(); }
       if(window.caches){ const ks=await caches.keys(); for(const k of ks) await caches.delete(k); }
-      sessionStorage.removeItem('mk_heal');
+      sessionStorage.removeItem('mk_heal'); sessionStorage.removeItem('mk_safe');
     }catch(e){}
     location.href=location.pathname+'?r='+Date.now();
   };
   setTimeout(async()=>{
     if(window.gameLoaded) return;
     try{
-      if(sessionStorage.getItem('mk_heal')){
-        // the one automatic heal already ran: tell the player instead of hanging silently
+      const heal=sessionStorage.getItem('mk_heal'), safe=sessionStorage.getItem('mk_safe');
+      if(heal && safe){
         const n=document.getElementById('loadNote');
-        if(n) n.innerHTML='⚠️ Het laden lukt niet. <button class="btn" style="margin-left:8px;padding:6px 12px;font-size:13px" onclick="window.__hardReset()">Opnieuw proberen</button>';
+        const sec=Math.round((Date.now()-window.__t0)/1000);
+        const det='fase: '+window.__stage+' · '+sec+'s · '+(window.__errs.length?window.__errs.join(' | '):'geen foutmelding');
+        if(n) n.innerHTML='⚠️ Het laden lukt niet. <button class="btn" style="margin-left:8px;padding:6px 12px;font-size:13px" onclick="window.__hardReset()">Opnieuw proberen</button>'
+          +'<div style="margin-top:10px;font-size:11px;color:#9bb;max-width:min(92vw,520px);word-break:break-word;user-select:text;-webkit-user-select:text">'+det.replace(/</g,'&lt;')+'</div>';
         return;
       }
-      sessionStorage.setItem('mk_heal','1');
-      if(navigator.serviceWorker){
-        const rs=await navigator.serviceWorker.getRegistrations();
-        for(const r of rs) await r.unregister();
+      if(!heal){
+        sessionStorage.setItem('mk_heal','1');
+        if(navigator.serviceWorker){
+          const rs=await navigator.serviceWorker.getRegistrations();
+          for(const r of rs) await r.unregister();
+        }
+        if(window.caches){ const ks=await caches.keys(); for(const k of ks) await caches.delete(k); }
+      } else {
+        sessionStorage.setItem('mk_safe','1');
       }
-      if(window.caches){ const ks=await caches.keys(); for(const k of ks) await caches.delete(k); }
       location.reload();
     }catch(e){}
-  }, 8000);
+  }, 12000);
 </script>
 </body>
 </html>

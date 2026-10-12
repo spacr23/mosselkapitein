@@ -1,6 +1,11 @@
 // 🦪 MOSSELKAPITEIN De Grote Oceaan
 // Een kleurrijke 3D mossel-visserij simulatie. Three.js, één wereld, geen build-stap.
 import * as THREE from 'three';
+// Progress marks for the load-watchdog in index.html (shows where loading stalls on a phone).
+const mark=s=>{ try{ if(window.__mark) window.__mark(s); }catch(e){} };
+mark('three geladen');
+// Safe mode: the watchdog sets mk_safe after a failed load, ?fx=0 forces it. No post-processing then.
+const SAFE_MODE=(()=>{ try{ return sessionStorage.getItem('mk_safe')==='1' || new URLSearchParams(location.search).get('fx')==='0'; }catch(e){ return false; } })();
 
 // ============================================================================
 //  0. GLOBAL STATE
@@ -111,7 +116,9 @@ function fitComposer(){
 // fails on a device (import, half-float target, shader), the game simply runs
 // without bloom instead of never starting. Colours are identical either way,
 // because the ocean/sky shaders invert the tone mapping that OutputPass applies.
-try{
+if(SAFE_MODE){ mark('veilige modus, geen gloed'); postFX.error='veilige modus'; }
+else try{
+  mark('gloed-modules laden');
   const [{EffectComposer},{RenderPass},{UnrealBloomPass},{ShaderPass},{OutputPass}] = await Promise.all([
     import('three/addons/postprocessing/EffectComposer.js'),
     import('three/addons/postprocessing/RenderPass.js'),
@@ -119,6 +126,7 @@ try{
     import('three/addons/postprocessing/ShaderPass.js'),
     import('three/addons/postprocessing/OutputPass.js'),
   ]);
+  mark('gloed opbouwen');
   const fxTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
     type: THREE.HalfFloatType, samples: IS_MOBILE ? 2 : 4 });
   composer = new EffectComposer(renderer, fxTarget);
@@ -138,6 +146,7 @@ try{
   composer.addPass(new OutputPass());
   fitComposer();
   postFX.available=true;
+  mark('gloed klaar');
 }catch(e){
   postFX.available=false; postFX.error=String(e && e.message || e);
   console.warn('Post-processing niet beschikbaar, spel draait zonder gloed:', postFX.error);
@@ -173,6 +182,7 @@ scene.add(ambient);
 // ============================================================================
 //  2. SKY DOME
 // ============================================================================
+mark('lucht');
 const skyGeo = new THREE.SphereGeometry(3000, 32, 16);
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite:false,
@@ -234,6 +244,7 @@ for(let i=0;i<40;i++){
 // ============================================================================
 //  3. OCEAN (animated Gerstner-ish waves via shader)
 // ============================================================================
+mark('oceaan');
 const OCEAN_SIZE = 6400;
 const OCEAN_SEG = IS_MOBILE ? 200 : 360;
 const oceanGeo = new THREE.PlaneGeometry(OCEAN_SIZE, OCEAN_SIZE, OCEAN_SEG, OCEAN_SEG);
@@ -383,6 +394,7 @@ function waveHeight(x,z,t,scale){
 // ============================================================================
 //  4. SHIP
 // ============================================================================
+mark('schip');
 const ship = new THREE.Group();
 scene.add(ship);
 let shipMesh = null;
@@ -670,6 +682,7 @@ scene.add(wake.points);
 // ============================================================================
 //  5. WORLD: harbors, islands, mussel beds, points of interest
 // ============================================================================
+mark('wereld');
 const HARBORS = [
   { name:'Mosselhaven', x:0,     z:160,   icon:'🏘️', demand:1.0,  color:0xff9d4d, r:42 },
   { name:'Zonnebaai',   x:680,   z:420,   icon:'⛵', demand:1.15, color:0xffc24d, r:36 },
@@ -1832,6 +1845,7 @@ const flash = new THREE.PointLight(0xcfe0ff, 0, 2000); flash.position.set(0,300,
 // ============================================================================
 //  6. INPUT
 // ============================================================================
+mark('besturing');
 const keys={};
 addEventListener('keydown',e=>{
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
@@ -2238,6 +2252,7 @@ function renderQuests(){
 // ============================================================================
 //  11. UI HUD, toasts, prompt, modals
 // ============================================================================
+mark('interface');
 const $=id=>document.getElementById(id);
 function updateHUD(){
   $('hudGold').textContent=Math.floor(W.gold);
@@ -3431,6 +3446,7 @@ function updateSplashes(dt){
 // ============================================================================
 //  19. AUDIO (tiny WebAudio beeps)
 // ============================================================================
+mark('audio');
 let actx=null;
 function beep(freq,dur=0.1,vol=0.05){
   try{
@@ -3689,6 +3705,7 @@ addEventListener('beforeunload', saveGame);
 // ============================================================================
 //  22. START
 // ============================================================================
+mark('start');
 function startGame(){
   W.started=true;
   document.getElementById('title').classList.add('hidden');
@@ -3759,4 +3776,6 @@ if(loadedFromSave){
 // Kick off loop
 $('loadNote').textContent = loadedFromSave ? '✅ Opgeslagen reis gevonden klik Verder spelen.' : '✅ Klaar! Klik Uitvaren.';
 requestAnimationFrame(update);
-window.gameLoaded=true;   // tells the index-watchdog the module came alive
+mark('klaar');
+window.gameLoaded=true;
+try{ sessionStorage.removeItem('mk_heal'); }catch(e){}   // tells the index-watchdog the module came alive
