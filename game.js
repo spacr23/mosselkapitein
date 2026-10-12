@@ -1,6 +1,11 @@
 // 🦪 MOSSELKAPITEIN De Grote Oceaan
 // Een kleurrijke 3D mossel-visserij simulatie. Three.js, één wereld, geen build-stap.
 import * as THREE from 'three';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass }      from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
 
 // ============================================================================
 //  0. GLOBAL STATE
@@ -92,6 +97,45 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x9fc4dd, 0.00013);
 
 const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.5, 9000);
+
+// ============================================================================
+//  1b. POST-PROCESSING: bloom glow + soft vignette. The scene is rendered into
+//  an HDR (half-float, multisampled) target; OutputPass then applies the ACES
+//  tone mapping and sRGB conversion once for the whole frame.
+// ============================================================================
+const postFX = { enabled: (()=>{ try{ return localStorage.getItem('mk_fx')!=='off'; }catch(e){ return true; } })() };
+const fxTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
+  type: THREE.HalfFloatType, samples: IS_MOBILE ? 2 : 4 });
+const composer = new EffectComposer(renderer, fxTarget);
+composer.addPass(new RenderPass(scene, camera));
+// bloom: only genuinely bright things glow (sun glitter, lamps, aurora, monster eyes)
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.35, 0.9);
+composer.addPass(bloomPass);
+// vignette: a gentle darkening toward the corners for a more filmic frame
+const vignettePass = new ShaderPass({
+  uniforms: { tDiffuse:{value:null}, uAmount:{value:0.32} },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uAmount; varying vec2 vUv;
+    void main(){ vec4 c=texture2D(tDiffuse,vUv); float d=distance(vUv,vec2(0.5));
+      c.rgb*=1.0-smoothstep(0.42,0.95,d)*uAmount; gl_FragColor=c; }`,
+});
+composer.addPass(vignettePass);
+composer.addPass(new OutputPass());
+// bloom is blurred anyway, so it can run at reduced resolution (cheap on phones)
+const BLOOM_SCALE = IS_MOBILE ? 0.5 : 0.75;
+function fitComposer(){
+  composer.setSize(innerWidth, innerHeight);
+  bloomPass.setSize(innerWidth*BLOOM_SCALE, innerHeight*BLOOM_SCALE);
+}
+fitComposer();
+function renderFrame(){
+  bloomPass.enabled=postFX.enabled; vignettePass.enabled=postFX.enabled;   // colours stay identical either way
+  composer.render();
+}
+function setPostFX(on){
+  postFX.enabled=!!on;
+  try{ localStorage.setItem('mk_fx', on?'on':'off'); }catch(e){}
+}
 camera.position.set(0, 22, 38);
 
 // lighting
@@ -114,7 +158,7 @@ scene.add(ambient);
 const skyGeo = new THREE.SphereGeometry(3000, 32, 16);
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite:false,
-  uniforms:{
+  uniforms:{ uExposure:{value:renderer.toneMappingExposure},
     uTop:{value:new THREE.Color(0x2f7fd0)}, uBot:{value:new THREE.Color(0xcdeaff)},
     uSunDir:{value:new THREE.Vector3(0,1,0)}, uSunColor:{value:new THREE.Color(0xffffff)}, uNight:{value:0},
   },
@@ -123,11 +167,26 @@ const skyMat = new THREE.ShaderMaterial({
     varying vec3 vDir; uniform vec3 uTop,uBot,uSunColor,uSunDir; uniform float uNight;
     // simple star hash
     float hash(vec3 p){ p=fract(p*0.3183099+0.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+    // ---- exact inverse of three.js' ACESFilmic + sRGB output, so colours tuned as
+    //      display values come out of the OutputPass pixel-for-pixel unchanged ----
+    uniform float uExposure;
+    vec3 srgbToLin(vec3 c){ vec3 lo=c/12.92; vec3 hi=pow((c+0.055)/1.055, vec3(2.4)); return mix(lo,hi,step(0.04045,c)); }
+    vec3 rrtOdtInv(vec3 y){
+      vec3 A=1.0-0.983729*y, B=0.0245786-0.4329510*y, C=-0.000090537-0.238081*y;
+      return (-B+sqrt(max(B*B-4.0*A*C,0.0)))/(2.0*A);
+    }
+    vec3 displayToScene(vec3 v){
+      const mat3 outInv=mat3(vec3(0.643038,0.059269,0.005962), vec3(0.311187,0.931436,0.063929), vec3(0.045775,0.009295,0.930118));
+      const mat3 inInv =mat3(vec3(1.764741,-0.147028,-0.036337), vec3(-0.675778,1.160252,-0.162436), vec3(-0.088963,-0.013224,1.198773));
+      vec3 c=srgbToLin(clamp(v,0.0,0.999));
+      c=clamp(outInv*c, 0.0, 0.999); c=rrtOdtInv(c); c=inInv*c;
+      return c*0.6/uExposure;
+    }
     void main(){
       float h=clamp(vDir.y*0.5+0.5,0.0,1.0);
       vec3 col=mix(uBot,uTop,pow(h,0.6));
       float sd=max(dot(normalize(vDir),normalize(uSunDir)),0.0);
-      col += uSunColor*pow(sd,180.0)*2.2;          // sun/moon disc
+      vec3 disc = uSunColor*pow(sd,180.0)*2.2;      // sun/moon disc, HDR for bloom
       col += uSunColor*pow(sd,8.0)*0.18;           // glow
       // stars at night
       if(uNight>0.01 && vDir.y>0.0){
@@ -135,7 +194,7 @@ const skyMat = new THREE.ShaderMaterial({
         float s=step(0.992,hash(g))*uNight;
         col += vec3(s)*0.9;
       }
-      gl_FragColor=vec4(col,1.0);
+      gl_FragColor=vec4(displayToScene(col) + disc, 1.0);
     }`,
 });
 const sky = new THREE.Mesh(skyGeo, skyMat);
@@ -168,6 +227,7 @@ const oceanUniforms = {
   uDeep:{value:new THREE.Color(0x05335e)}, uMid:{value:new THREE.Color(0x0e6493)},
   uShallow:{value:new THREE.Color(0x2fd9c0)},
   uSky:{value:new THREE.Color(0xcdeBff)}, uNight:{value:0}, uSunStrength:{value:1.0},
+  uExposure:{value:renderer.toneMappingExposure},
   uLand:{value:Array.from({length:LAND_MAX},()=>new THREE.Vector3(0,0,0))},
 };
 const oceanMat = new THREE.ShaderMaterial({
@@ -207,6 +267,21 @@ const oceanMat = new THREE.ShaderMaterial({
     uniform vec3 uSunDir,uSunColor,uDeep,uMid,uShallow,uSky;
     uniform float uNight,uSunStrength,uTime,uWaveScale;
     uniform vec3 uLand[${LAND_MAX}];
+    // ---- exact inverse of three.js' ACESFilmic + sRGB output, so colours tuned as
+    //      display values come out of the OutputPass pixel-for-pixel unchanged ----
+    uniform float uExposure;
+    vec3 srgbToLin(vec3 c){ vec3 lo=c/12.92; vec3 hi=pow((c+0.055)/1.055, vec3(2.4)); return mix(lo,hi,step(0.04045,c)); }
+    vec3 rrtOdtInv(vec3 y){
+      vec3 A=1.0-0.983729*y, B=0.0245786-0.4329510*y, C=-0.000090537-0.238081*y;
+      return (-B+sqrt(max(B*B-4.0*A*C,0.0)))/(2.0*A);
+    }
+    vec3 displayToScene(vec3 v){
+      const mat3 outInv=mat3(vec3(0.643038,0.059269,0.005962), vec3(0.311187,0.931436,0.063929), vec3(0.045775,0.009295,0.930118));
+      const mat3 inInv =mat3(vec3(1.764741,-0.147028,-0.036337), vec3(-0.675778,1.160252,-0.162436), vec3(-0.088963,-0.013224,1.198773));
+      vec3 c=srgbToLin(clamp(v,0.0,0.999));
+      c=clamp(outInv*c, 0.0, 0.999); c=rrtOdtInv(c); c=inInv*c;
+      return c*0.6/uExposure;
+    }
     // ---- cheap animated value noise for surface ripple detail ----
     float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
     float vnoise(vec2 p){
@@ -253,7 +328,7 @@ const oceanMat = new THREE.ShaderMaterial({
       // ---- sun glitter: sharp sparkle over the ripple field + wide sheen ----
       vec3 H=normalize(L+V);
       float ndh=max(dot(N,H),0.0);
-      col += uSunColor*pow(ndh,340.0)*4.5*uSunStrength;
+      vec3 glitter = uSunColor*pow(ndh,340.0)*4.5*uSunStrength;   // sharp sparkle, kept HDR for bloom
       col += uSunColor*pow(ndh,32.0)*0.30*uSunStrength;
       // ---- foam: crests offshore + animated surf along shorelines ----
       // height relative to the current sea state, so storms don't whitewash the surface
@@ -265,7 +340,7 @@ const oceanMat = new THREE.ShaderMaterial({
       float horizon=clamp((vD-900.0)/2600.0,0.0,1.0);
       col=mix(col, uSky*mix(1.0,0.5,uNight), horizon*0.65);
       col*=mix(0.30,1.0,1.0-uNight*0.6);
-      gl_FragColor=vec4(col,0.96);
+      gl_FragColor=vec4(displayToScene(col) + glitter*0.8, 0.96);
     }`,
   transparent:true,
 });
@@ -841,8 +916,8 @@ const auroras=[];
       uniform float uTime,uOpacity,uPhase; varying vec2 vUv;
       void main(){
         float bands = 0.5 + 0.5*sin(vUv.x*46.0 + uTime*0.7 + uPhase + sin(vUv.x*7.0 + uTime*0.33)*2.6);
-        bands = pow(bands, 1.6);
-        float fade = pow(1.0-vUv.y, 1.4) * smoothstep(0.0, 0.06, vUv.y);
+        bands = pow(max(bands,0.0), 1.6);           // never pow() a negative: NaN would blank the frame via bloom
+        float fade = pow(max(1.0-vUv.y,0.0), 1.4) * smoothstep(0.0, 0.06, vUv.y);
         vec3 col = mix(vec3(0.15,1.0,0.55), vec3(0.55,0.30,0.95), vUv.y*1.2);
         float a = bands * fade * uOpacity;
         gl_FragColor = vec4(col*a, a);
@@ -1764,6 +1839,7 @@ addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  fitComposer();
 });
 
 let camMode=0; // 0 chase, 1 close, 2 high
@@ -2873,12 +2949,12 @@ let camPos=new THREE.Vector3(0,22,38);
 const clock=new THREE.Clock();
 function update(){
   let dt=Math.min(clock.getDelta(),0.05);
-  if(!W.started){ renderer.render(scene,camera); requestAnimationFrame(update); return; }
+  if(!W.started){ renderFrame(); requestAnimationFrame(update); return; }
   if(!W.paused) stepSim(dt);
   else oceanUniforms.uTime.value += dt*0.3; // gentle idle waves while paused
   updateCook(dt);
   updateSplashes(dt);
-  renderer.render(scene,camera);
+  renderFrame();
   requestAnimationFrame(update);
 }
 
@@ -3460,10 +3536,12 @@ function togglePause(){
     <div style="text-align:center;margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button class="btn" onclick="window.__resume()">▶️ Verder spelen</button>
       <button class="btn alt" onclick="window.__manual()">📖 Handleiding</button>
+      <button class="btn alt" onclick="window.__toggleFX()">✨ Gloed: ${postFX.enabled?'aan':'uit'}</button>
     </div>`);
   } else closeModal();
 }
 window.__resume=()=>{ W.paused=false; closeModal(); };
+window.__toggleFX=()=>{ setPostFX(!postFX.enabled); closeModal(); W.paused=false; togglePause(); };
 
 // ---- Handleiding / manual (opened from the pause menu) ----
 function openManual(){
@@ -3642,7 +3720,7 @@ window.getShipMesh=()=>shipMesh;
 window.music=music; window.mapView=mapView; window.drawBigMap=drawBigMap;
 window.sonarPing=sonarPing; window.bedVisible=bedVisible; window.sonarNow=sonarNow;
 window.oceanUniforms=oceanUniforms; window.damageHull=damageHull; window.sinkShip=sinkShip;
-window.toast=toast; window.renderer=renderer; window.scene=scene;
+window.toast=toast; window.renderer=renderer; window.scene=scene; window.composer=composer; window.postFX=postFX; window.setPostFX=setPostFX; window.bloomPass=bloomPass;
 
 // Restore a previous save (if any) and adjust the title screen accordingly
 if(hasSave()){
