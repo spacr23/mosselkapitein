@@ -128,6 +128,11 @@ const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.5, 9000
 const postFX = { enabled: (()=>{ try{ return localStorage.getItem('mk_fx')!=='off'; }catch(e){ return true; } })(),
                  available:false, error:null };
 let composer=null, bloomPass=null, vignettePass=null;
+// Player settings (pause menu > Instellingen), remembered per device.
+const SETTINGS={ sfx:true, look:1, shadow: IS_MOBILE?'normaal':'hoog' };
+try{ const j=JSON.parse(localStorage.getItem('mk_settings')||'{}'); Object.assign(SETTINGS, j); }catch(e){}
+function saveSettings(){ try{ localStorage.setItem('mk_settings', JSON.stringify(SETTINGS)); }catch(e){} }
+const SHADOW_SIZES={ laag:512, normaal:1024, hoog:2048 };
 const BLOOM_SCALE = IS_MOBILE ? 0.5 : 0.75;     // bloom is blurred anyway: cheaper at reduced resolution
 function fitComposer(){
   if(!composer) return;
@@ -190,7 +195,7 @@ camera.position.set(0, 22, 38);
 // lighting
 const sun = new THREE.DirectionalLight(0xfff0c8, 1.6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(IS_MOBILE?1024:2048, IS_MOBILE?1024:2048);
+sun.shadow.mapSize.set(SHADOW_SIZES[SETTINGS.shadow]||1024, SHADOW_SIZES[SETTINGS.shadow]||1024);
 sun.shadow.camera.near = 1; sun.shadow.camera.far = 400;
 sun.shadow.camera.left=-160; sun.shadow.camera.right=160; sun.shadow.camera.top=160; sun.shadow.camera.bottom=-160;
 sun.shadow.bias = -0.0004;
@@ -1970,8 +1975,8 @@ function setupLook(){
   surf.addEventListener('pointermove', e=>{
     if(e.pointerId!==id) return;
     const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
-    camLook.yaw   = clampN(camLook.yaw   - dx*0.006, -2.7, 2.7);
-    camLook.pitch = clampN(camLook.pitch - dy*0.004, -0.30, 1.15);
+    camLook.yaw   = clampN(camLook.yaw   - dx*0.006*SETTINGS.look, -2.7, 2.7);
+    camLook.pitch = clampN(camLook.pitch - dy*0.004*SETTINGS.look, -0.30, 1.15);
   });
   const end=e=>{ if(e.pointerId===id){ id=null; camLook.active=false; } };
   surf.addEventListener('pointerup', end);
@@ -3680,6 +3685,7 @@ function updateSplashes(dt){
 mark('audio');
 let actx=null;
 function beep(freq,dur=0.1,vol=0.05){
+  if(!SETTINGS.sfx) return;
   try{
     if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
     const o=actx.createOscillator(), g=actx.createGain();
@@ -3803,13 +3809,73 @@ function togglePause(){
     <div style="text-align:center;margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button class="btn" onclick="window.__resume()">▶️ Verder spelen</button>
       <button class="btn alt" onclick="window.__manual()">📖 Handleiding</button>
+      <button class="btn alt" onclick="window.__bestiary()">🐙 Bestiarium</button>
+      <button class="btn alt" onclick="window.__settings()">⚙️ Instellingen</button>
       <button class="btn alt" onclick="window.__saveCode()">💾 Reis-code</button>
-      ${postFX.available?`<button class="btn alt" onclick="window.__toggleFX()">✨ Gloed: ${postFX.enabled?'aan':'uit'}</button>`:''}
     </div>`);
   } else closeModal();
 }
 window.__resume=()=>{ W.paused=false; closeModal(); };
 window.__toggleFX=()=>{ setPostFX(!postFX.enabled); closeModal(); W.paused=false; togglePause(); };
+
+// ---- Instellingen (pause menu) ----
+function optRow(label, opts, cur, fn){
+  return `<div class="card2"><h3>${label}</h3><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${opts.map(([v,t])=>
+    `<button class="btn ${String(v)===String(cur)?'':'alt'}" style="padding:7px 12px;font-size:13px" onclick="${fn}('${v}')">${t}</button>`).join('')}</div></div>`;
+}
+function openSettings(){
+  W.paused=true;
+  openModal(`<h2>⚙️ Instellingen</h2><div class="sub">Worden op dit toestel onthouden.</div>
+    <div class="grid">
+      ${postFX.available?optRow('✨ Gloed (bloom)',[['on','Aan'],['off','Uit']], postFX.enabled?'on':'off','window.__setFX'):''}
+      ${optRow('🎵 Muziek',[['on','Aan'],['off','Uit']], music.on?'on':'off','window.__setMusic')}
+      ${optRow('🔔 Geluidseffecten',[['on','Aan'],['off','Uit']], SETTINGS.sfx?'on':'off','window.__setSfx')}
+      ${optRow('👆 Rondkijken (gevoeligheid)',[['0.6','Rustig'],['1','Normaal'],['1.6','Snel']], SETTINGS.look,'window.__setLook')}
+      ${optRow('🌤️ Schaduwkwaliteit',[['laag','Laag'],['normaal','Normaal'],['hoog','Hoog']], SETTINGS.shadow,'window.__setShadow')}
+    </div>
+    <div class="sub" style="margin-top:8px">Op een telefoon helpen Gloed uit en Schaduw laag tegen een warme batterij.</div>
+    <div style="text-align:center;margin-top:14px"><button class="btn" onclick="window.__backToPause()">◀ Terug</button></div>`);
+}
+window.__settings=openSettings;
+window.__setFX=v=>{ setPostFX(v==='on'); openSettings(); };
+window.__setMusic=v=>{ if((v==='on')!==music.on) toggleMusic(); refreshMusicBtn(); openSettings(); };
+window.__setSfx=v=>{ SETTINGS.sfx=(v==='on'); saveSettings(); if(SETTINGS.sfx) beep(660,.08); openSettings(); };
+window.__setLook=v=>{ SETTINGS.look=parseFloat(v)||1; saveSettings(); openSettings(); };
+window.__setShadow=v=>{
+  if(!SHADOW_SIZES[v]) return; SETTINGS.shadow=v; saveSettings();
+  const n=SHADOW_SIZES[v]; sun.shadow.mapSize.set(n,n);
+  if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; }   // forces a fresh shadow texture
+  openSettings();
+};
+
+// ---- Bestiarium: waar, wanneer en hoe vaak je de monsters hebt gezien ----
+function openBestiary(){
+  W.paused=true;
+  const d=W.day;
+  const rows=[
+    { icon:'🦑', name:'Kraken', where:'Uiterste noordwesten van de Schemerzee (mist). Hij rijst op zodra je zijn hol nadert.',
+      loot:'Krakeninkt (220 🪙 per fles), veel XP en 30 roem.', seen: kraken.known,
+      status: kraken.state==='gone' ? `Verslagen, keert terug vanaf dag ${W.krakenGoneUntilDay}` : (kraken.state==='rising'||kraken.state==='fight') ? 'Nu actief!' : (kraken.known?'Ligt op de loer in zijn hol':'Nog niet ontdekt'),
+      count:`${W.krakensSlain}× verslagen` },
+    { icon:'🐉', name:'Zeeslang', where:'Zwerft door de hele IJszee (noorden). Ziet ze je, dan jaagt ze.',
+      loot:'Zeeslangschubben (150 🪙 per stuk), XP en 25 roem.', seen: serpent.known,
+      status: serpent.state==='gone' ? `Verslagen, keert terug vanaf dag ${W.serpentGoneUntilDay}` : (serpent.state==='chase'||serpent.state==='fight') ? 'Zit achter je aan!' : (serpent.known?'Zwerft rond in de IJszee':'Nog niet ontdekt'),
+      count:`${W.serpentsSlain}× verslagen` },
+    { icon:'👻', name:'Spookschip', where:'Elke nacht (21:00 tot 05:00) ergens bij je in de buurt. Bij dageraad lost het op.',
+      loot:'Spookgoud en soms een zeldzame vangst. Enter het met de actieknop. 5 roem.', seen: W.ghostsLooted>0 || ghost.state!=='hidden',
+      status: ghost.state!=='hidden' ? 'Nu op zee!' : (isNight()?'Kan elk moment opduiken':'Wacht op de nacht'),
+      count:`${W.ghostsLooted}× geplunderd` },
+    { icon:'🦀', name:'Reuzenkrab', where:'Belegert om de 3 à 4 dagen een willekeurige haven. Je krijgt alarm en ziet hem op de kaart.',
+      loot:'Krabbenscharen (180 🪙 per stuk), XP en 25 roem.', seen: W.crabsSlain>0 || crab.state==='siege',
+      status: crab.state==='siege' ? `Belegert ${crab.harbor?crab.harbor.name:'een haven'}!` : `Volgende beleg rond dag ${Math.max(d, W.crabNextDay)}`,
+      count:`${W.crabsSlain}× verslagen` },
+  ];
+  openModal(`<h2>🐙 Bestiarium</h2><div class="sub">Koop eerst het 🔱 Harpoenkanon op de werf. Grotere schepen slaan harder en houden meer romp over.</div>
+    <div class="grid">${rows.map(r=>`<div class="card2" style="${r.seen?'':'opacity:.75'}"><h3>${r.icon} ${r.seen?r.name:'???'} <span class="lvltag">${r.count}</span></h3>
+      <p><b style="color:var(--gold)">${r.status}</b><br>${r.where}<br><span style="color:var(--muted)">Buit: ${r.loot}</span></p></div>`).join('')}</div>
+    <div style="text-align:center;margin-top:14px"><button class="btn" onclick="window.__backToPause()">◀ Terug</button></div>`);
+}
+window.__bestiary=openBestiary;
 
 // ---- Handleiding / manual (opened from the pause menu) ----
 function openManual(){
