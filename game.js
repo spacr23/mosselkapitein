@@ -84,7 +84,25 @@ const A_SP = IS_TOUCH ? '<span class="key">🦪 Vang</span>'  : '<span class="ke
 const PRESS = IS_TOUCH ? 'Tik' : 'Druk';
 
 const container = document.getElementById('game');
-const renderer = new THREE.WebGLRenderer({ antialias:!IS_MOBILE, powerPreference:'high-performance' });
+// Creating the WebGL context can fail on iOS when Safari's GPU process has
+// crashed earlier: every new context is then refused until Safari is fully
+// closed. Try a few option sets, then explain the fix instead of hanging.
+function makeRenderer(){
+  const tries=[
+    { antialias:!IS_MOBILE, powerPreference:'high-performance' },
+    { antialias:false, powerPreference:'default' },
+    { antialias:false, powerPreference:'default', failIfMajorPerformanceCaveat:false, depth:true, stencil:false },
+  ];
+  let err=null;
+  for(const o of tries){ try{ return new THREE.WebGLRenderer(o); }catch(e){ err=e; } }
+  mark('webgl mislukt');
+  const msg='Je telefoon geeft even geen 3D-beeld (WebGL). Herstart je iPhone en open het spel daarna opnieuw. Dit ligt aan het toestel, niet aan je opgeslagen reis.';
+  try{ if(window.__showFail) window.__showFail(msg, String(err && err.message || err)); }catch(e){}
+  throw err || new Error('WebGL niet beschikbaar');
+}
+const renderer = makeRenderer();
+// Lost GPU context (memory pressure on phones): reload so the saved game continues.
+renderer.domElement.addEventListener('webglcontextlost', e=>{ e.preventDefault(); setTimeout(()=>location.reload(), 400); });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, IS_MOBILE?1.5:2));
 renderer.shadowMap.enabled = true;
@@ -128,7 +146,7 @@ else try{
   ]);
   mark('gloed opbouwen');
   const fxTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
-    type: THREE.HalfFloatType, samples: IS_MOBILE ? 2 : 4 });
+    type: THREE.HalfFloatType, samples: IS_MOBILE ? 0 : 4 });   // phones never had MSAA: keep GPU memory low
   composer = new EffectComposer(renderer, fxTarget);
   composer.addPass(new RenderPass(scene, camera));
   // bloom: only genuinely bright things glow (sun glitter, lamps, aurora, monster eyes)
