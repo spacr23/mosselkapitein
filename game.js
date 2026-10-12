@@ -1,11 +1,6 @@
 // 🦪 MOSSELKAPITEIN De Grote Oceaan
 // Een kleurrijke 3D mossel-visserij simulatie. Three.js, één wereld, geen build-stap.
 import * as THREE from 'three';
-import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass }      from 'three/addons/postprocessing/ShaderPass.js';
-import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
 
 // ============================================================================
 //  0. GLOBAL STATE
@@ -103,34 +98,57 @@ const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.5, 9000
 //  an HDR (half-float, multisampled) target; OutputPass then applies the ACES
 //  tone mapping and sRGB conversion once for the whole frame.
 // ============================================================================
-const postFX = { enabled: (()=>{ try{ return localStorage.getItem('mk_fx')!=='off'; }catch(e){ return true; } })() };
-const fxTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
-  type: THREE.HalfFloatType, samples: IS_MOBILE ? 2 : 4 });
-const composer = new EffectComposer(renderer, fxTarget);
-composer.addPass(new RenderPass(scene, camera));
-// bloom: only genuinely bright things glow (sun glitter, lamps, aurora, monster eyes)
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.35, 0.9);
-composer.addPass(bloomPass);
-// vignette: a gentle darkening toward the corners for a more filmic frame
-const vignettePass = new ShaderPass({
-  uniforms: { tDiffuse:{value:null}, uAmount:{value:0.32} },
-  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float uAmount; varying vec2 vUv;
-    void main(){ vec4 c=texture2D(tDiffuse,vUv); float d=distance(vUv,vec2(0.5));
-      c.rgb*=1.0-smoothstep(0.42,0.95,d)*uAmount; gl_FragColor=c; }`,
-});
-composer.addPass(vignettePass);
-composer.addPass(new OutputPass());
-// bloom is blurred anyway, so it can run at reduced resolution (cheap on phones)
-const BLOOM_SCALE = IS_MOBILE ? 0.5 : 0.75;
+const postFX = { enabled: (()=>{ try{ return localStorage.getItem('mk_fx')!=='off'; }catch(e){ return true; } })(),
+                 available:false, error:null };
+let composer=null, bloomPass=null, vignettePass=null;
+const BLOOM_SCALE = IS_MOBILE ? 0.5 : 0.75;     // bloom is blurred anyway: cheaper at reduced resolution
 function fitComposer(){
+  if(!composer) return;
   composer.setSize(innerWidth, innerHeight);
   bloomPass.setSize(innerWidth*BLOOM_SCALE, innerHeight*BLOOM_SCALE);
 }
-fitComposer();
+// The post-processing modules are loaded dynamically: if anything about them
+// fails on a device (import, half-float target, shader), the game simply runs
+// without bloom instead of never starting. Colours are identical either way,
+// because the ocean/sky shaders invert the tone mapping that OutputPass applies.
+try{
+  const [{EffectComposer},{RenderPass},{UnrealBloomPass},{ShaderPass},{OutputPass}] = await Promise.all([
+    import('three/addons/postprocessing/EffectComposer.js'),
+    import('three/addons/postprocessing/RenderPass.js'),
+    import('three/addons/postprocessing/UnrealBloomPass.js'),
+    import('three/addons/postprocessing/ShaderPass.js'),
+    import('three/addons/postprocessing/OutputPass.js'),
+  ]);
+  const fxTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
+    type: THREE.HalfFloatType, samples: IS_MOBILE ? 2 : 4 });
+  composer = new EffectComposer(renderer, fxTarget);
+  composer.addPass(new RenderPass(scene, camera));
+  // bloom: only genuinely bright things glow (sun glitter, lamps, aurora, monster eyes)
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.35, 0.9);
+  composer.addPass(bloomPass);
+  // vignette: a gentle darkening toward the corners for a more filmic frame
+  vignettePass = new ShaderPass({
+    uniforms: { tDiffuse:{value:null}, uAmount:{value:0.32} },
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float uAmount; varying vec2 vUv;
+      void main(){ vec4 c=texture2D(tDiffuse,vUv); float d=distance(vUv,vec2(0.5));
+        c.rgb*=1.0-smoothstep(0.42,0.95,d)*uAmount; gl_FragColor=c; }`,
+  });
+  composer.addPass(vignettePass);
+  composer.addPass(new OutputPass());
+  fitComposer();
+  postFX.available=true;
+}catch(e){
+  postFX.available=false; postFX.error=String(e && e.message || e);
+  console.warn('Post-processing niet beschikbaar, spel draait zonder gloed:', postFX.error);
+}
 function renderFrame(){
-  bloomPass.enabled=postFX.enabled; vignettePass.enabled=postFX.enabled;   // colours stay identical either way
-  composer.render();
+  if(composer){
+    bloomPass.enabled=postFX.enabled; vignettePass.enabled=postFX.enabled;   // colours stay identical either way
+    try{ composer.render(); return; }
+    catch(e){ composer=null; postFX.available=false; postFX.error=String(e && e.message || e); }
+  }
+  renderer.render(scene, camera);
 }
 function setPostFX(on){
   postFX.enabled=!!on;
@@ -3536,7 +3554,7 @@ function togglePause(){
     <div style="text-align:center;margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button class="btn" onclick="window.__resume()">▶️ Verder spelen</button>
       <button class="btn alt" onclick="window.__manual()">📖 Handleiding</button>
-      <button class="btn alt" onclick="window.__toggleFX()">✨ Gloed: ${postFX.enabled?'aan':'uit'}</button>
+      ${postFX.available?`<button class="btn alt" onclick="window.__toggleFX()">✨ Gloed: ${postFX.enabled?'aan':'uit'}</button>`:''}
     </div>`);
   } else closeModal();
 }

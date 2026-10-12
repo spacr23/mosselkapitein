@@ -1,0 +1,39 @@
+<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mosselkapitein diagnose</title>
+<style>body{font:14px/1.5 -apple-system,sans-serif;background:#04111d;color:#eaf6ff;padding:12px} pre{white-space:pre-wrap;word-break:break-all} .ok{color:#5bd97a}.bad{color:#ff6b6b}</style></head><body>
+<h3>Diagnose</h3><pre id="log">start…</pre>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+<script type="module">
+const log=document.getElementById('log'); const lines=[];
+const say=(cls,msg)=>{ lines.push(`<span class="${cls}">${msg}</span>`); log.innerHTML=lines.join('\n'); };
+say('ok','UA: '+navigator.userAgent);
+say('ok','SW controller: '+(navigator.serviceWorker&&navigator.serviceWorker.controller?'JA':'nee'));
+let THREE;
+try{ THREE=await import('three'); say('ok','three '+THREE.REVISION+' geladen'); }catch(e){ say('bad','three FAALT: '+e.message); }
+for(const m of ['postprocessing/EffectComposer.js','postprocessing/RenderPass.js','postprocessing/UnrealBloomPass.js','postprocessing/ShaderPass.js','postprocessing/OutputPass.js']){
+  try{ const t0=performance.now(); await import('three/addons/'+m); say('ok',m+' ok ('+Math.round(performance.now()-t0)+'ms)'); }
+  catch(e){ say('bad',m+' FAALT: '+e.message); }
+}
+try{
+  const r=new THREE.WebGLRenderer({antialias:false}); r.setSize(64,64);
+  const gl=r.getContext(); say('ok','WebGL'+(r.capabilities.isWebGL2?'2':'1')+' · '+(gl.getParameter(gl.RENDERER)||'?'));
+  say('ok','EXT_color_buffer_half_float: '+!!gl.getExtension('EXT_color_buffer_half_float')+' · EXT_color_buffer_float: '+!!gl.getExtension('EXT_color_buffer_float'));
+  const sc=new THREE.Scene(); const cam=new THREE.PerspectiveCamera(50,1,0.1,10); cam.position.z=2;
+  sc.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial({color:0xffd34d})));
+  for(const samples of [0,2,4]){
+    try{ const rt=new THREE.WebGLRenderTarget(64,64,{type:THREE.HalfFloatType,samples}); r.setRenderTarget(rt); r.render(sc,cam); r.setRenderTarget(null);
+      const px=new Uint16Array(4); let st='?'; try{ r.readRenderTargetPixels(rt,32,32,1,1,px); st='pixel='+px[0]; }catch(e){ st='readback: '+e.message; }
+      const err=gl.getError(); say(err?'bad':'ok','HalfFloat RT samples='+samples+' → glError='+err+' '+st); }
+    catch(e){ say('bad','HalfFloat RT samples='+samples+' FAALT: '+e.message); }
+  }
+  const {EffectComposer}=await import('three/addons/postprocessing/EffectComposer.js');
+  const {RenderPass}=await import('three/addons/postprocessing/RenderPass.js');
+  const {UnrealBloomPass}=await import('three/addons/postprocessing/UnrealBloomPass.js');
+  const {OutputPass}=await import('three/addons/postprocessing/OutputPass.js');
+  const comp=new EffectComposer(r,new THREE.WebGLRenderTarget(64,64,{type:THREE.HalfFloatType,samples:2}));
+  comp.addPass(new RenderPass(sc,cam)); comp.addPass(new UnrealBloomPass(new THREE.Vector2(64,64),0.45,0.35,0.9)); comp.addPass(new OutputPass());
+  comp.render(); const err=gl.getError(); say(err?'bad':'ok','composer.render() → glError='+err);
+  document.body.appendChild(r.domElement);
+}catch(e){ say('bad','WebGL-stap FAALT: '+e.message+'\n'+(e.stack||'')); }
+say('ok','KLAAR');
+</script></body></html>

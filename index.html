@@ -349,10 +349,23 @@
   }
   // Watchdog: if the game module hasn't come alive within 8s (e.g. a broken
   // cached game.js), wipe this device's caches and reload once to self-heal.
+  window.__hardReset=async()=>{
+    try{
+      if(navigator.serviceWorker){ const rs=await navigator.serviceWorker.getRegistrations(); for(const r of rs) await r.unregister(); }
+      if(window.caches){ const ks=await caches.keys(); for(const k of ks) await caches.delete(k); }
+      sessionStorage.removeItem('mk_heal');
+    }catch(e){}
+    location.href=location.pathname+'?r='+Date.now();
+  };
   setTimeout(async()=>{
     if(window.gameLoaded) return;
     try{
-      if(sessionStorage.getItem('mk_heal')) return;   // only try once per visit
+      if(sessionStorage.getItem('mk_heal')){
+        // the one automatic heal already ran: tell the player instead of hanging silently
+        const n=document.getElementById('loadNote');
+        if(n) n.innerHTML='⚠️ Het laden lukt niet. <button class="btn" style="margin-left:8px;padding:6px 12px;font-size:13px" onclick="window.__hardReset()">Opnieuw proberen</button>';
+        return;
+      }
       sessionStorage.setItem('mk_heal','1');
       if(navigator.serviceWorker){
         const rs=await navigator.serviceWorker.getRegistrations();

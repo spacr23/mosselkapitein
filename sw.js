@@ -1,6 +1,6 @@
 // Mosselkapitein service worker — offline play + instant reloads.
 // Bump CACHE when you change index.html / game.js so phones pick up the new version.
-const CACHE = "mosselkapitein-v25";
+const CACHE = "mosselkapitein-v26";
 
 // Same-origin app shell + the Three.js modules from the CDN.
 const ASSETS = [
@@ -13,6 +13,12 @@ const ASSETS = [
   './icon-512.png',
   './title-bg.jpg',
   'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
+  // post-processing module graph: precached so phones never fetch these through
+  // the runtime path (iOS Safari is flaky when a worker proxies module scripts)
+  ...['postprocessing/EffectComposer.js','postprocessing/RenderPass.js','postprocessing/UnrealBloomPass.js',
+      'postprocessing/ShaderPass.js','postprocessing/OutputPass.js','postprocessing/Pass.js','postprocessing/MaskPass.js',
+      'shaders/CopyShader.js','shaders/LuminosityHighPassShader.js','shaders/OutputShader.js']
+    .map(p => 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/' + p),
 ];
 
 self.addEventListener('install', e => {
@@ -49,13 +55,17 @@ self.addEventListener('fetch', e => {
   }
 
   // Everything else (game.js, icons, three.js): cache-first, then network (and cache it).
+  // Cross-origin module scripts: fetch by plain URL (a fresh Request) and never
+  // answer with "undefined" on failure, which the browser reports as a network error.
+  const crossOrigin = new URL(req.url).origin !== self.location.origin;
+  const doFetch = () => crossOrigin ? fetch(req.url, { mode: 'cors', credentials: 'omit' }) : fetch(req);
   e.respondWith(
-    caches.match(req).then(hit => hit || fetch(req).then(res => {
+    caches.match(req).then(hit => hit || doFetch().then(res => {
       if (res.ok) {                         // a 404 during a deploy must never get stuck in cache
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
       }
       return res;
-    }).catch(() => hit))
+    }).catch(err => hit || (crossOrigin ? fetch(req.url) : Promise.reject(err))))
   );
 });
