@@ -733,6 +733,48 @@ const harborCores=[];                 // {x,z,r} solid land used for ship collis
 const poiGroup = new THREE.Group(); scene.add(poiGroup);
 
 // build harbors central land + village + lighthouse + a wooden pier (aanmeerplek)
+// ---- Draw-call reducer: merge a group's static meshes into one mesh per material flavour ----
+// Each part keeps its own colour through vertex colours. A harbour, island or reef drops
+// from 30 to 60 draw calls to a handful, which is what a phone CPU notices most.
+function bakeGroup(g, skip=()=>false){
+  g.updateMatrixWorld(true);
+  const inv=new THREE.Matrix4().copy(g.matrixWorld).invert();
+  const buckets=new Map(), doomed=[];
+  g.traverse(o=>{
+    if(!o.isMesh || skip(o) || !o.material || !o.material.isMeshStandardMaterial || o.material.map || o.material.vertexColors) return;
+    const m=o.material;
+    const key=[m.flatShading?1:0, m.side, m.transparent?1:0, m.emissive.getHex(), m.emissiveIntensity.toFixed(2), m.roughness.toFixed(1), m.metalness.toFixed(1), o.castShadow?1:0].join('|');
+    let b=buckets.get(key); if(!b){ b={m, geos:[], cast:!!o.castShadow, recv:false}; buckets.set(key,b); }
+    const geo=o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    const n=geo.attributes.position.count, col=new Float32Array(n*3);
+    for(let i=0;i<n;i++){ col[i*3]=m.color.r; col[i*3+1]=m.color.g; col[i*3+2]=m.color.b; }
+    geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+    b.geos.push(geo); b.recv=b.recv||!!o.receiveShadow; doomed.push(o);
+  });
+  for(const o of doomed){ o.parent.remove(o); o.material.dispose(); }
+  for(const b of buckets.values()){
+    let nv=0; for(const ge of b.geos) nv+=ge.attributes.position.count;
+    const pos=new Float32Array(nv*3), nor=new Float32Array(nv*3), col=new Float32Array(nv*3); let off=0;
+    for(const ge of b.geos){
+      pos.set(ge.attributes.position.array, off*3);
+      if(ge.attributes.normal) nor.set(ge.attributes.normal.array, off*3);
+      col.set(ge.attributes.color.array, off*3);
+      off+=ge.attributes.position.count; ge.dispose();
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor,3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+    const src=b.m;
+    const mesh=new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors:true, flatShading:src.flatShading, side:src.side,
+      transparent:src.transparent, opacity:src.opacity, emissive:src.emissive.clone(), emissiveIntensity:src.emissiveIntensity,
+      roughness:src.roughness, metalness:src.metalness }));
+    mesh.castShadow=b.cast; mesh.receiveShadow=b.recv; g.add(mesh);
+  }
+  return g;
+}
+
 for(const h of HARBORS){
   const g = new THREE.Group();
   const R = h.r;
@@ -806,6 +848,7 @@ for(const h of HARBORS){
   g.rotation.y=Math.atan2(h.x,h.z);
   g.position.set(h.x,0,h.z);
   poiGroup.add(g);
+  bakeGroup(g, o=>o===lamp||o===buoy);
   harborMarkers.push({...h, group:g});
   harborCores.push({x:h.x, z:h.z, r:coreR});
 }
@@ -899,6 +942,7 @@ function makeDeadTree(px,pz,py,scale=1){
   tree.position.set(px,py,pz);
   return tree;
 }
+const tx0=(a,rr)=>Math.cos(a)*rr, tz0=(a,rr)=>Math.sin(a)*rr;
 // build islands
 for(const isl of ISLANDS){
   const g=new THREE.Group();
@@ -910,14 +954,17 @@ for(const isl of ISLANDS){
     const a=Math.random()*6.28, rr=isl.r*(0.75+Math.random()*0.2);
     const boulder=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5+Math.random()*2.5,0),
       new THREE.MeshStandardMaterial({color:biome==='storm'?0x8a94a0:0x6b6257,roughness:1,flatShading:true}));
-    boulder.position.set(Math.cos(a)*rr, 0.4, Math.sin(a)*rr);
+    const bdome=0.42*Math.sqrt(Math.max(0, isl.r*isl.r-rr*rr))*(1+terrainNoise(tx0(a,rr)*3/isl.r, tz0(a,rr)*3/isl.r)*0.35)-1.5;
+    boulder.position.set(Math.cos(a)*rr, Math.max(0.4, bdome-0.8), Math.sin(a)*rr);
     boulder.rotation.set(Math.random()*3,Math.random()*3,0); boulder.castShadow=true; g.add(boulder);
   }
   // trees fit the climate: pines in the IJszee, bare trunks in the mist, palms elsewhere
   const nTrees=3+Math.floor(isl.r/16);
   for(let i=0;i<nTrees;i++){
     const a=Math.random()*6.28, rr=isl.r*(0.3+Math.random()*0.3);
-    const tx=Math.cos(a)*rr, tz=Math.sin(a)*rr, ty=isl.r*0.16, ts=0.8+Math.random()*0.5;
+    // stand on the terrain dome (height 0.42r at the centre, rippled by noise) instead of inside it
+    const dome=0.42*Math.sqrt(Math.max(0, isl.r*isl.r-rr*rr))*(1+terrainNoise(tx0(a,rr)*3/isl.r, tz0(a,rr)*3/isl.r)*0.35)-1.5;
+    const tx=Math.cos(a)*rr, tz=Math.sin(a)*rr, ty=Math.max(0.5, dome-0.6), ts=0.8+Math.random()*0.5;
     g.add(biome==='storm'?makePine(tx,tz,ty,ts) : biome==='mist'?makeDeadTree(tx,tz,ty,ts) : makePalm(tx,tz,ty,ts));
   }
   if(isl.treasure){
@@ -931,6 +978,7 @@ for(const isl of ISLANDS){
   }
   g.position.set(isl.x,0,isl.z);
   poiGroup.add(g);
+  bakeGroup(g, o=>o===g.userData.chest||o===g.userData.gold);
   islandMeshes.push({...isl, group:g});
 }
 
@@ -1071,6 +1119,7 @@ const reefs=[];
     }
     g.position.set(x,0,z);
     scene.add(g);
+    bakeGroup(g);
     reefs.push({x,z,r,group:g});
   }
 }
@@ -1089,45 +1138,51 @@ const beds = [];
 const bedGeo = new THREE.IcosahedronGeometry(0.55,0);
 // Bed kinds per sea: 'mossel' (everywhere), 'zalm' (swimming schools, IJszee),
 // 'parel' (pearl oysters, tropics), 'inktvis' (squid swarms, mist zone, night only).
+// Every bed is one InstancedMesh (one draw call) instead of 4 to 15 meshes; the
+// per-shell rotation and fish bob are written into the instance matrices each frame,
+// but only for beds near the ship.
+const fishGeo=new THREE.ConeGeometry(0.5,2.4,6), squidGeo=new THREE.ConeGeometry(0.8,2.6,7);
+const _bm=new THREE.Matrix4(), _bq=new THREE.Quaternion(), _be=new THREE.Euler(), _bv=new THREE.Vector3(), _bs=new THREE.Vector3();
+function makeBedInstances(g, geo, mat, base, rx=0){
+  const mesh=new THREE.InstancedMesh(geo, mat, base.length);
+  base.forEach((o,i)=>{ _bv.set(o.x,o.y,o.z); _bq.setFromEuler(_be.set(rx,o.ry,0)); _bs.setScalar(o.s); mesh.setMatrixAt(i,_bm.compose(_bv,_bq,_bs)); });
+  g.add(mesh); g.userData.inst={mesh, base, rx};
+}
+function animateBed(b, fn){
+  const inst=b.group.userData.inst; if(!inst) return;
+  if(dist2(b.x,b.z,shipState.x,shipState.z) > 320*320) return;     // out of sight: leave the matrices alone
+  for(let i=0;i<inst.base.length;i++){
+    const o=inst.base[i]; fn(i,o);
+    _bq.setFromEuler(_be.set(inst.rx,o.ry,0)); _bs.setScalar(o.s);
+    inst.mesh.setMatrixAt(i,_bm.compose(_bv,_bq,_bs));
+  }
+  inst.mesh.instanceMatrix.needsUpdate=true;
+}
 function spawnBed(x,z,opts={}){
   const g=new THREE.Group();
   const kind = opts.kind || 'mossel';
   const golden = kind==='mossel' && (opts.golden || Math.random()<0.04);
+  const base=[];
   if(kind==='zalm'){
     // a school of silvery fish that swims about
-    for(let i=0;i<5;i++){
-      const f=new THREE.Mesh(new THREE.ConeGeometry(0.5,2.4,6),
-        new THREE.MeshStandardMaterial({color:0xc5d4de, roughness:.35, metalness:.5}));
-      f.rotation.x=Math.PI/2;
-      f.position.set((Math.random()-0.5)*6, -0.4-Math.random()*0.5, (Math.random()-0.5)*6);
-      g.add(f);
-    }
+    for(let i=0;i<5;i++) base.push({x:(Math.random()-0.5)*6, y:-0.4-Math.random()*0.5, z:(Math.random()-0.5)*6, s:1, ry:0});
+    makeBedInstances(g, fishGeo, new THREE.MeshStandardMaterial({color:0xc5d4de, roughness:.35, metalness:.5}), base, Math.PI/2);
   } else if(kind==='parel'){
     // pale oyster shells with a soft pink sheen
-    for(let i=0;i<5;i++){
-      const m=new THREE.Mesh(bedGeo, new THREE.MeshStandardMaterial({
-        color:0xf3e8e2, emissive:0xb96a8a, emissiveIntensity:.18, roughness:.35, metalness:.3, flatShading:true}));
-      m.position.set((Math.random()-0.5)*4,0,(Math.random()-0.5)*4);
-      m.scale.setScalar(0.7+Math.random()*0.6); g.add(m);
-    }
+    for(let i=0;i<5;i++) base.push({x:(Math.random()-0.5)*4, y:0, z:(Math.random()-0.5)*4, s:0.7+Math.random()*0.6, ry:Math.random()*6.28});
+    makeBedInstances(g, bedGeo, new THREE.MeshStandardMaterial({
+      color:0xf3e8e2, emissive:0xb96a8a, emissiveIntensity:.18, roughness:.35, metalness:.3, flatShading:true}), base);
   } else if(kind==='inktvis'){
     // glowing violet squid, hovering just under the surface
-    for(let i=0;i<4;i++){
-      const s=new THREE.Mesh(new THREE.ConeGeometry(0.8,2.6,7),
-        new THREE.MeshStandardMaterial({color:0x8a5ad0, emissive:0x6a2aff, emissiveIntensity:.8,
-          transparent:true, opacity:.9, roughness:.4}));
-      s.position.set((Math.random()-0.5)*5, -0.8, (Math.random()-0.5)*5);
-      g.add(s);
-    }
+    for(let i=0;i<4;i++) base.push({x:(Math.random()-0.5)*5, y:-0.8, z:(Math.random()-0.5)*5, s:1, ry:Math.random()*6.28});
+    makeBedInstances(g, squidGeo, new THREE.MeshStandardMaterial({color:0x8a5ad0, emissive:0x6a2aff, emissiveIntensity:.8,
+      transparent:true, opacity:.9, roughness:.4}), base);
   } else {
     const count = 8+Math.floor(Math.random()*8);
-    for(let i=0;i<count;i++){
-      const m=new THREE.Mesh(bedGeo, new THREE.MeshStandardMaterial({
-        color: golden?0xffd34d:0x2a2a35, emissive: golden?0x6a4a00:0x000000,
-        emissiveIntensity: golden?0.5:0, roughness:.7, metalness: golden?.5:.1, flatShading:true}));
-      m.position.set((Math.random()-0.5)*5,0,(Math.random()-0.5)*5);
-      m.scale.setScalar(0.6+Math.random()*0.8); g.add(m);
-    }
+    for(let i=0;i<count;i++) base.push({x:(Math.random()-0.5)*5, y:0, z:(Math.random()-0.5)*5, s:0.6+Math.random()*0.8, ry:Math.random()*6.28});
+    makeBedInstances(g, bedGeo, new THREE.MeshStandardMaterial({
+      color: golden?0xffd34d:0x2a2a35, emissive: golden?0x6a4a00:0x000000,
+      emissiveIntensity: golden?0.5:0, roughness:.7, metalness: golden?.5:.1, flatShading:true}), base);
   }
   g.position.set(x,-1.2,z);
   poiGroup.add(g);
@@ -3325,13 +3380,13 @@ function stepSim(dt){
       if(b.z<-2750) b.z=-2750, b.heading=(Math.random()-0.5);
       if(Math.abs(b.x)>1000) b.x=Math.sign(b.x)*1000, b.heading=-b.heading;   // IJszee is only the middle north
       b.group.position.set(b.x,-1.2,b.z);
-      b.group.children.forEach((c,i)=>{ c.rotation.y=b.heading+Math.PI; c.position.y=-0.4+Math.sin(t*3+i)*0.35; });
+      animateBed(b,(i,o)=>{ o.ry=b.heading+Math.PI; _bv.set(o.x,-0.4+Math.sin(t*3+i)*0.35,o.z); });
       if(Math.random()<dt*0.7) splash(b.x+(Math.random()-0.5)*6, b.z+(Math.random()-0.5)*6);
     } else if(b.kind==='inktvis'){
       b.group.visible = isNight();
-      if(b.group.visible) b.group.children.forEach((c,i)=>{ c.position.y=-0.8+Math.sin(t*1.6+i*2)*0.4; c.rotation.y+=dt*0.8; });
+      if(b.group.visible) animateBed(b,(i,o)=>{ o.ry+=dt*0.8; _bv.set(o.x,-0.8+Math.sin(t*1.6+i*2)*0.4,o.z); });
     } else {
-      b.group.children.forEach((c,i)=>{ c.rotation.y+=dt*0.5; });
+      animateBed(b,(i,o)=>{ o.ry+=dt*0.5; _bv.set(o.x,o.y,o.z); });
     }
   }
   // harbor beacon pulse + buoy bob
